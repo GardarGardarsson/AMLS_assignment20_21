@@ -8,12 +8,12 @@ Images are 178 x 218 px
 @author: gardar
 """
 
-# Import os module to work with paths etc.
+# Import os module to work with paths, directories etc.
 import os
+# Import numpy package for mathematical support
+import numpy as np
 # Import imageio Python library to read image data into numpy arrays
 import imageio
-# Import numpy package for greater mathematical support
-import numpy as np
 
 # Define a path to the data - REMEMBER TO RESET THIS BEFORE TURNING IN
 data_path = "/Users/gardar/Documents/UCL/ELEC0134 MLS-I Applied Machine Learning Systems/Assignments/dataset_AMLS_20-21/celeba/img/"
@@ -31,4 +31,4 @@ for file in os.listdir(data_path):
 X = np.array(X)
 
 # We can return the size of the array to verify that all images were read
-print(X.shape)
+print("Image data is stored in a matrix of size: {}".format(X.shape))
