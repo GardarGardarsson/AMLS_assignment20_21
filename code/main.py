@@ -10,11 +10,13 @@ sys.path.append(currentPath)
 
 # Now we can import our own modules into our script.
 import import_data as ds
+import split_dataset as sd 
 
+# numpy for enhanced mathematical support
+import numpy as np
 # Matplotlib for visualisation
 import matplotlib.pyplot as plt
-# Scikit learn for splitting the datasets into train, validation and test folds
-from sklearn.model_selection import train_test_split
+
 
 if __name__ == '__main__':
     # Define a path to the data - REMEMBER TO RESET THIS BEFORE TURNING IN
@@ -24,24 +26,43 @@ if __name__ == '__main__':
     # Load image and label data with the novel 'import_data' module
     X , y , random_img = ds.dataImport(img_path,label_path,surpress=False,return_img_indices=True)
     
-    # Split data to train and test sets
-    Xtrain,Xtest,ytrain,ytest = train_test_split(X,y,test_size=0.2)
+    # Split data to train, validation and test sets
+    Xtrain,Xtest,Xval,ytrain,ytest,yval = sd.split_dataset(X,y,
+                                                           test_size=0.2,
+                                                           val_size=0.2,
+                                                           surpress=False) 
+    """ ... TO PLOT FROM TRAINING SET ...
+    # Choose a couple of random var's from Xtrain
+    random_Xtrain = np.random.randint(len(Xtrain), size=(2,3))
     
-    # Split train set to train end validation sets
-    Xtrain,Xval,ytrain,yval = train_test_split(Xtrain,ytrain,test_size=0.2)
+    # Define a tuple to iterate over
+    row, col = random_Xtrain.shape
     
-    # Display the splits in a pie chart
-        
-    sizes = [(len(Xtrain)/len(X)*100),(len(Xval)/len(X)*100),(len(Xtest)/len(X)*100)]
-    labels = ['Train','Validation','Test']
+    # Define layout and size of subplot
+    fig, ax = plt.subplots(nrows=row, ncols=col, figsize=(16,8))
     
-    # Pie chart, where the slices will be ordered and plotted counter-clockwise:
-    explode = (0, 0.1, 0)  # only "explode" the 2nd slice (i.e. 'Hogs')
-
-    fig1, ax1 = plt.subplots()
-    ax1.pie(sizes, explode=explode, labels=labels, autopct='%1.1f%%',
-            shadow=True, startangle=90)
-    ax1.axis('equal')  # Equal aspect ratio ensures that pie is drawn as a circle.
-
+    # Let's populate our 2x3 subplot
+    for i in range(row) :
+        for j in range(col):
+            # We extract a 4D array from our image library
+            extract = X[(random_Xtrain[i,j]),:,:,:]
+            # Get rid of the 4th dimension, i.e. squeeze back to 3D
+            img = np.squeeze(extract)
+            
+            # We can then plot the image using matplotlib's .imshow() function
+            ax[i,j].imshow(img)
+            # Turn off plot axes
+            ax[i,j].axis("off")
+            
+            # Set the title of each image as the corresponding labels
+            gender = y.loc[random_Xtrain[i,j],'gender']
+            smiling = y.loc[random_Xtrain[i,j],'smiling']
+            title = "Gender: {} \n Smiling: {}".format(("Female" if gender == -1 else "Male"),
+                                                      ("No" if smiling == -1 else "Yes"))
+            ax[i,j].set_title(title)
+                
+    # Set tight layout and display the plot
+    plt.suptitle('Randomly chosen images and corresponding labels from training set')
+    plt.tight_layout()
     plt.show()
-    
+    """

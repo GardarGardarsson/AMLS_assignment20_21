@@ -24,6 +24,7 @@ def print_progress (iteration, total, message = '', length = 20):
     # Print new line on completion
     if iteration == total: 
         print()
+        
 
 if __name__ == '__main__':
     
