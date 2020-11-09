@@ -10,6 +10,7 @@ Images are 178 x 218 px
 
 # Import os module to work with paths, directories etc.
 import os
+
 # Import numpy package for mathematical support
 import numpy as np
 # Import imageio Python library to read image data into numpy arrays
@@ -43,6 +44,8 @@ I M A G E   I M P O R T
 
 def importImages(img_path,surpress=False):
     
+    print('Importing image data...')
+    
     # Define a list to hold image data
     X = [] # Our feature vector
     
@@ -51,7 +54,7 @@ def importImages(img_path,surpress=False):
         # We'll devise a filename to keep things in order
         filename = str(i) + '.jpg'
         # We append each 178 x 218 px and 3 channel (RGB) to the list
-        X.append(imageio.imread(img_path + filename))    
+        X.append(imageio.imread(img_path + filename))
     
     # We'll now convert our list to a numpy array
     X = np.array(X)
@@ -71,6 +74,8 @@ L A B E L   I M P O R T
 """
 
 def importLabels(label_path,surpress=False):
+    
+    print('Importing labels...')
     
     # Define a list to hold label data
     y = [] # Label vector
@@ -102,10 +107,13 @@ def dataImport(img_path,label_path,surpress=False,return_img_indices=False):
     X = importImages(img_path,surpress)
     y = importLabels(label_path,surpress)
     
+    # Let's print a couple of random images from our imported data with corresponding labels
+    random_img = np.random.randint(5000, size=(2,3))
+    
     # We may choose to surpress outputs in our function call
     if not surpress:
-        # Let's print a couple of random images from our imported data with corresponding labels
-        random_img = np.random.randint(5000, size=(2,3))
+        # Displaying random image data...
+        print('Displaying random images and corresponding labels from set...')
         
         # Define a tuple to iterate over
         row, col = random_img.shape
