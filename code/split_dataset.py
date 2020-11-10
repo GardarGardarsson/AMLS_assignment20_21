@@ -46,7 +46,7 @@ def split_dataset(X,y,test_size=0.2,val_size=0.2,surpress=False):
         ax1.pie(sizes, explode=explode, labels=labels, autopct='%1.1f%%',
                 shadow=True, startangle=90)
         ax1.axis('equal')  # Equal aspect ratio ensures that pie is drawn as a circle.
-        
+        plt.suptitle('Dataset split')
         plt.show()
         
     else:

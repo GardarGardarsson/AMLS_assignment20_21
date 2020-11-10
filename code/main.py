@@ -31,6 +31,8 @@ if __name__ == '__main__':
                                                            test_size=0.2,
                                                            val_size=0.2,
                                                            surpress=False) 
+    print(ytrain.loc[:,'gender'])
+    
     """ ... TO PLOT FROM TRAINING SET ...
     # Choose a couple of random var's from Xtrain
     random_Xtrain = np.random.randint(len(Xtrain), size=(2,3))

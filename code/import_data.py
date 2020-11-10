@@ -119,7 +119,7 @@ def dataImport(img_path,label_path,surpress=False,return_img_indices=False):
         row, col = random_img.shape
         
         # Define layout and size of subplot
-        fig, ax = plt.subplots(nrows=row, ncols=col, figsize=(16,8))
+        fig, ax = plt.subplots(nrows=row, ncols=col, figsize=(12,8))
         
         # Let's populate our 2x3 subplot
         for i in range(row) :
