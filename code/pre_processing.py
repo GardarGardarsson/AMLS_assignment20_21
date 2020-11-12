@@ -242,7 +242,7 @@ def fitPCA(WT,X,n_components=30):
     print("Fitting to PCA base")
     
     # Calculate "weights"
-    Xfitted = X * WT[:X.shape[0]] 
+    Xfitted = np.dot(X, WT.T)
     
     # Reduce dimensions to n number of components
     Xfitted = Xfitted[:,:n_components]
