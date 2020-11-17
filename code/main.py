@@ -41,9 +41,9 @@ if __name__ == '__main__':
     P R E - P R O C E S S   D A T A 
     """
     # Center images on mean
-    Xtrain = prp.imgProcessing(Xtrain,surpress=False)
-    Xval = prp.imgProcessing(Xval,surpress=True)
-    Xtest = prp.imgProcessing(Xtest,surpress=True)
+    Xtrain,trainMean = prp.imgProcessing(Xtrain,surpress=False)
+    Xval,trainMean = prp.imgProcessing(Xval,surpress=True,mean=trainMean)
+    Xtest,trainMean = prp.imgProcessing(Xtest,surpress=True,mean=trainMean)
     
     # Perform PCA on test data to obtain eigenvalues and vectors
     Sigma,WT = prp.PCA_w_SVD(Xtrain,surpress=False)

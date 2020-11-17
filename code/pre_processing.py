@@ -35,7 +35,7 @@ def reduceRGB(X):
     
     return X
 
-def centerImg(X, surpress=False):
+def centerImg(X, surpress=False,mean=None):
     """
     Center image as deviation from mean of image set
 
@@ -53,13 +53,38 @@ def centerImg(X, surpress=False):
     
     print("Centering images...")
     
-    mean = X.mean(axis=0) # We then calculate the mean of the 2nd and 3rd dimensions
+    # We perform the first pre-processing action on the training imageset.
+    # When we center our validation and test images, we must center them
+    # on the "mean image", calculated from the training set.
+    # Hence, during the first pass, i.e. with the training data, 
+    # we calculate the mean, and then pass the mean into the centering
+    # function again, for pre-processing of the test and validation data.
     
+    # If we have the training data, no mean is assumed
+    if mean is None:
+        # We calculate the mean of the 2nd and 3rd dimensions
+        mean = X.mean(axis=0) 
+        
+        # We flatten the mean image from 218 x 178 to 1 x 38804, as we perform
+        # centering using this later
+        mean = mean.flatten()
+    # If we're processing for the validation or test sets, the mean is already
+    # known, and we route to the else condition.
+    else:
+        pass # ... and do nothing
+    
+    # We can choose to surpress outputs
     if not surpress:
         # Display an image of the "average" face from the dataset
         print("Displaying the average face from the data...")
         plt.figure()
-        plt.imshow(mean,cmap=plt.get_cmap("gray"))
+        
+        # We grab the dimensions of the images we're working with
+        N,h,w = X.shape
+        
+        # And use it to restructure the previously flattened mean image
+        plt.imshow(np.reshape(mean,(h,w)),cmap=plt.get_cmap("gray"))
+        
         plt.axis("off")
         plt.title("Mean Image from Data")
         plt.show()
@@ -76,18 +101,15 @@ def centerImg(X, surpress=False):
     # We want to reshape it by unstacking the 2nd and 3rd dimensions, i.e. width by height    
     Xflat = np.reshape(X, (N,h * w)) 
     
-    # Let's flatten the mean image from 218 x 178 to 1 x 38804:
-    mean = mean.flatten()
-    
     # Let's load the centered images to a list using a comprehension
     Xcenter = np.array([Xflat[img,...] - mean for img in range(len(Xflat))])
     
     # As we may well obtain negative values here, we constrain the centered image array to the interval 0...255 
     Xcenter = np.interp(Xcenter, (Xcenter.min(), Xcenter.max()), (0, 255))
     
-    return Xcenter
+    return Xcenter, mean
 
-def imgProcessing(X,surpress=False):
+def imgProcessing(X,surpress=False,mean=None):
     """ 
     X is an unprocessed N x h x w x RGB array 
     It is encoded to grayscale and then centered around the mean image from the data
@@ -113,7 +135,7 @@ def imgProcessing(X,surpress=False):
     Xgry = reduceRGB(X)
     
     # Center images on average image
-    Xcenter = centerImg(Xgry,surpress)
+    Xcenter,mean = centerImg(Xgry,surpress)
     
     if not surpress:
         fig,ax = plt.subplots(1,3)
@@ -137,7 +159,7 @@ def imgProcessing(X,surpress=False):
     else:
         pass
     
-    return Xcenter
+    return Xcenter,mean
     
 def PCA_w_SVD(Xcenter,surpress=False):
     """
