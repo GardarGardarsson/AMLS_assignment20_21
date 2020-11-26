@@ -19,12 +19,14 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 
+
 if __name__ == '__main__':
     
     # Define a path to the data - REMEMBER TO RESET THIS BEFORE TURNING IN
     img_path = "/Users/gardar/Documents/UCL/ELEC0134 MLS-I Applied Machine Learning Systems/Assignments/dataset_AMLS_20-21/celeba/img/"
     label_path = "/Users/gardar/Documents/UCL/ELEC0134 MLS-I Applied Machine Learning Systems/Assignments/dataset_AMLS_20-21/celeba/"
     
+    # %%
     """
     L O A D   D A T A 
     """
@@ -37,8 +39,34 @@ if __name__ == '__main__':
     # Split dataset into train-, validation- and test folds
     Xtrain,Xval,Xtest,ytrain,yval,ytest = sd.split_dataset(X,y,test_size=0.2,val_size=0.2,surpress=False)
     
+    # %%
     """
-    P R E - P R O C E S S   D A T A 
+    D A T A   A U G M E N T A T I O N
+    """
+    
+    
+    
+    
+    #%%
+    """
+    P R E - P R O C E S S :   F A C E   E N C O D I N G S
+    """
+    
+    import face_recognition
+    
+    Xtrain_FE = []
+    
+    for img in Xtrain:
+        Xtrain_FE.append(face_recognition.face_encodings(img))
+    
+    Xtrain_FE = np.array(Xtrain_FE)
+
+    # %%
+    print(Xtrain_FE)
+    
+    # %%
+    """
+    P R E - P R O C E S S   D A T A   P C A 
     """
     # Center images on mean
     Xtrain,trainMean = prp.imgProcessing(Xtrain,surpress=False)
