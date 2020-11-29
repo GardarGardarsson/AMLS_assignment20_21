@@ -277,7 +277,6 @@ if __name__ == '__main__':
     T A S K   B :   C A R T O O N   D A T A S E T
     """
     
-    
     # %%
     """
     L O A D   D A T A
@@ -298,32 +297,177 @@ if __name__ == '__main__':
     S P L I T   D A T A
     """
     # Split dataset into train-, validation- and test folds
-    Xtrain,Xval,Xtest,ytrain,yval,ytest = sd.split_dataset(X,y,test_size=0.2,val_size=0.2,surpress=True)
+    Xtrain,Xval,Xtest,ytrain,yval,ytest = sd.split_dataset(X,y,test_size=0.2,val_size=0.2,surpress=False)
     
     
     # %% Crop images...
     """
-    P R E - P R O C E S S :   C R O P
+    P R E - P R O C E S S :   C R O P   E Y E   R E G I O N
     """
     
     def crop(img_arr):
         # Initialise an empty array that can accomodate as many instances
         # as the number of images we wish to crop, in the required final dimensions
         cropped = np.empty((img_arr.shape[0],
-                            img_arr.shape[1]-425, # Subtract 40px from the height
-                            img_arr.shape[2]-300,
+                            35, # Final height 35 Px
+                            55, # Final width 55 Px
                             img_arr.shape[3]),int)
         
         # For each of the images provided
         for i,img in enumerate(img_arr):
-            # We store a cropped version, that crops a 20 px banner from the
-            # top and bottom of the image
-            cropped[i] = img[225:225+75,150:150+200]
+            # We store a cropped version, that crops a 35 x 55 px rectangle
+            # from the eye region
+            cropped[i] = img[245:245+35,180:180+55]
             
         return cropped
     
-    Xtrain_C = crop(Xtrain[:300])
-    
-    plt.imshow(Xtrain_C[101])
-    print(Xtrain_C[101].shape)
+    # We crop the training, validation and test data
+    Xtrain_C = crop(Xtrain)
+    Xval_C = crop(Xval)
+    Xtest_C = crop(Xtest)
+    # %% Grayscale images...
+    """
+    P R E - P R O C E S S :   G R A Y S C A L E 
+    """
+    Xtrain_gry = prp.reduceRGB(Xtrain_C)
+    Xval_gry = prp.reduceRGB(Xval_C)
+    Xtest_gry = prp.reduceRGB(Xtest_C)
+
     # %%
+    
+    """
+    P R E - P R O C E S S :   D E T E C T   D A R K   E Y E G L A S S E S
+    """
+    
+    # Import the Canny Edge Filter from the scikit-image library
+    from skimage.feature import canny
+    
+    # Define a function for dark glasses detection using Canny filter on grayscale
+    # eye-region imagery
+    def detect_dark_glasses(img_arr, surpress=False):
+        
+        """
+        A function that applies a Canny filter to a grayscale eye region image.
+        Edges are stored as binary values in a 35 x 55 (H x W in px) array
+        By summing the values of the array, a feature descriptor is realised.
+        A low scoring descriptor denotes a feature poor eye region which 
+        indicates the eye features are hidden.
+        
+        The Canny filter, tuned with a low sigma parameter, performs well even with 
+        semi-shaded glasses, as the half-transparent alpha channel gets interpreted 
+        as noise. This noise is translated to more edges in the feature descriptor 
+        and hence still provides an excellent classifier for the discrimination 
+        of dark shades.
+        """
+        
+        # Initialise a container for the Canny edge images
+        canny_img = np.empty(img_arr.shape)
+        
+        # Initialise a container for the feature description values
+        canny_values = np.empty(len(img_arr))
+        
+        # For each of the supplied images
+        for i,img in enumerate(img_arr):
+            
+            # Apply a Canny filter
+            edges = canny(img)
+            
+            # Calculate a feature description value:
+            value = edges.astype(int).sum()
+            
+            # Store the Canny image
+            canny_img[i] = edges
+            
+            # Store the feature description value: 
+            canny_values[i] = value
+        
+        # We may choose to turn of plotting
+        if not surpress: 
+            
+            # Find a random amount of images
+            rand_img = np.random.randint(0,len(img_arr),size=(3,4))
+            row, col = rand_img.shape
+            
+            fig,ax = plt.subplots(nrows=row,ncols=col)
+            for i in range(row):
+                for j in range(col):
+                    ax[i][j].imshow(canny_img[rand_img[i][j]])
+                    ax[i][j].axis("off")
+                    ax[i][j].set_title("{}".format(canny_values[rand_img[i][j]]))
+            
+            plt.suptitle("Eye region edges with pixelwise values")
+            plt.tight_layout()
+            plt.show()
+            
+        return canny_img, canny_values
+    
+    # Retrieve eye region imagery and feature values
+    Xtrain_CE_img , Xtrain_CE_val = detect_dark_glasses(Xtrain_gry)
+    Xval_CE_img , Xval_CE_val = detect_dark_glasses(Xval_gry, surpress = True)
+    Xtest_CE_img , Xtest_CE_val = detect_dark_glasses(Xtest_gry, surpress = True)
+    
+    # %%
+    
+    """
+    V I S U A L I S E   T H E   B O U N D A R Y
+    """
+    
+    # To get a better view of the apparent split in the data, we can
+    # plot the Canny feature descriptor values. The boundary is placed
+    # between the lowest scoring eye (198) and highest ranking glasses (175)
+    
+    plt.figure(figsize=(6,2),dpi=400)
+    
+    shades = Xtrain_CE_val[Xtrain_CE_val < 185]
+    no_shades = Xtrain_CE_val[Xtrain_CE_val > 185]
+    
+    plt.scatter(no_shades , np.zeros_like(no_shades),color="green")
+    plt.scatter(shades , np.zeros_like(shades))
+    plt.axvline(187,color='orange',linestyle = '--')
+    plt.scatter(187,0,marker='x',color='red', label = "Sunglasses boundary")
+    
+    plt.suptitle("Canny eye feature values")
+    plt.yticks([])
+    plt.tight_layout()
+    plt.show()
+    
+    # %%
+    """
+    I N D E X   D A R K   G L A S S E S
+    """
+    Xtrain_glasses = np.where(Xtrain_CE_val < 187)[0]
+    Xtrain_no_glasses = np.where(Xtrain_CE_val >= 187)[0]
+    print(Xtrain_glasses)
+    print(Xtrain_no_glasses)
+    
+    for i,index in enumerate(Xtrain_glasses[:20]):
+        plt.imshow(Xtrain_C[index])
+        plt.xticks([])
+        plt.yticks([])
+        plt.savefig("plots/glasses/{}".format(i))
+        
+    for i,index in enumerate(Xtrain_no_glasses[:20]):
+        plt.imshow(Xtrain_C[index])
+        plt.xticks([])
+        plt.yticks([])
+        plt.savefig("plots/no_glasses/{}".format(i))
+
+    # %%
+    """
+    E Y E   C O L O R   C L A S S I F I C A T I O N
+    """
+    
+    
+    # %%
+    
+    thresh = 199
+    
+    for i in range(30):
+        print("Thresh: ", thresh)
+        print("Train : ", np.where(Xtrain_CE_val < thresh)[0].shape[0])
+        print("Val   : ", np.where(Xval_CE_val < thresh)[0].shape[0])
+        print("Test  : ", np.where(Xtest_CE_val < thresh)[0].shape[0])
+        print("Total : ", 1151 + 303 + 404)
+        print("-------------")
+        thresh -= 1
+    
