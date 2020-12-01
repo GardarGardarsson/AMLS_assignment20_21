@@ -26,24 +26,19 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 
-# %% Load and split data...
+# %% Load data...
 if __name__ == '__main__':
     
     """
     L O A D   D A T A
     """
     # Define a path to the data - REMEMBER TO RESET THIS BEFORE TURNING IN
-    img_path = "/Datasets/celeba/img/"
-    label_path = "/Datasets/celeba/"
+    img_path = "/Documents/UCL/ELEC0134 MLS-I Applied Machine Learning Systems/Assignments/Assignment/dataset_AMLS_20-21/celeba/img/"
+    label_path = "/Documents/UCL/ELEC0134 MLS-I Applied Machine Learning Systems/Assignments/Assignment/dataset_AMLS_20-21/celeba/"
     
     # Load image and label data with the novel 'import_data' module
     X , y , random_img = ds.dataImport(img_path,label_path,surpress=False,return_img_indices=True)
     
-    """
-    S P L I T   D A T A
-    """
-    # Split dataset into train-, validation- and test folds
-    Xtrain,Xval,Xtest,ytrain,yval,ytest = sd.split_dataset(X,y,test_size=0.2,val_size=0.2,surpress=False)
     
     # %% Augment data...
     """
@@ -54,31 +49,34 @@ if __name__ == '__main__':
     # For e.g. flips, mirroring, concealment.
     # I'll leave this cell empty for later implementation.
     
+    # Flip an image array horizontally
+    def flip_horizontal(array):
+        return np.flip(array,axis = 2)
+    
+    # Enrich the sample space with augmented images (horizontally flip)
+    X = np.concatenate((X,flip_horizontal(X)))
+    # Appending labels to label set
+    y = pd.concat([y,y])
+    y.reset_index(drop=True, inplace=True)
+    
+    # %% Split data to training, validation and test folds...
+    """
+    S P L I T   D A T A
+    """
+    # Split dataset into train-, validation- and test folds
+    Xtrain,Xval,Xtest,ytrain,yval,ytest = sd.split_dataset(X,y,
+                                                           test_size=0.2,
+                                                           val_size=0.25,
+                                                           surpress=False)
     
     #%% Crop images...
     """
     P R E - P R O C E S S :   C R O P
     """
     
-    def crop(img_arr):
-        # Initialise an empty array that can accomodate as many instances
-        # as the number of images we wish to crop, in the required final dimensions
-        cropped = np.empty((img_arr.shape[0],
-                            img_arr.shape[1]-40, # Subtract 40px from the height
-                            img_arr.shape[2],
-                            img_arr.shape[3]),int)
-        
-        # For each of the images provided
-        for i,img in enumerate(img_arr):
-            # We store a cropped version, that crops a 20 px banner from the
-            # top and bottom of the image
-            cropped[i] = img[20:20+178]
-            
-        return cropped
-    
-    Xtrain_C = crop(Xtrain)
-    Xval_C = crop(Xval)
-    Xtest_C = crop(Xtest)
+    Xtrain_C =  prp.crop(Xtrain, H=178, W=178, ver_off=20,hor_off=0)
+    Xval_C   =  prp.crop(Xval, H=178, W=178, ver_off=20,hor_off=0)
+    Xtest_C  =  prp.crop(Xtest, H=178, W=178, ver_off=20,hor_off=0)
     
     #%% Grayscale images...
     """
@@ -86,74 +84,46 @@ if __name__ == '__main__':
     """
     
     # Reduce the RGB channels to a singular gray channel using Rec. 601 encoding
-    Xtrain_gry = prp.reduceRGB(Xtrain_C).astype(np.uint16)
-    Xval_gry = prp.reduceRGB(Xval_C).astype(np.uint16)
-    Xtest_gry = prp.reduceRGB(Xtest_C).astype(np.uint16)
+    Xtrain_gry =  prp.reduceRGB(Xtrain_C).astype(np.uint16)
+    Xval_gry   =  prp.reduceRGB(Xval_C).astype(np.uint16)
+    Xtest_gry  =  prp.reduceRGB(Xtest_C).astype(np.uint16)
     
     #%% Perform histogram equalization...
     """
     P R E - P R O C E S S :   H I S T O G R A M   E Q U A L I S A T I O N
     """
     
-    print("Checkpoint: Start Histogram Equalisation")
-    
     # To perform Contrast Limited Adaptive Histogram Equalisation (CLAHE)
     # we import a scikit-image package
     from skimage.exposure import equalize_adapthist
     
-    # We equalize all the image data using an adaptive contrast equaliser
-    Xtrain_eq = equalize_adapthist(Xtrain_gry)
-    Xval_eq = equalize_adapthist(Xval_gry)
-    Xtest_eq = equalize_adapthist(Xtest_gry)
+    print("Performing CLAHE, Contrast Limited Adaptive Histogram Equalisation, this may take a while...")
     
-    print("Checkpoint: End Histogram Equalisation")
+    # We equalize all the image data using an adaptive contrast equaliser
+    Xtrain_eq =  equalize_adapthist(Xtrain_gry)
+    Xval_eq   =  equalize_adapthist(Xval_gry)
+    Xtest_eq  =  equalize_adapthist(Xtest_gry)
     
     #%% Edge detection with Sobel-Feldman operator...
     """
     P R E - P R O C E S S :   S O B E L
     """
-    
     # We now proceed by processing the images with a Sobel filter
     # The Sobel-Feldman operator provides powerful means of edge detection
     # especially, on equalised images
-    from scipy import ndimage
-    
-    def sobel(img_arr, surpress=False):
-        
-        # The sobel function assumes the dimensions of the image array it is passed
-        sobel = np.empty(img_arr.shape)
-        
-        for i,img in enumerate(img_arr):
-            
-            # x-directional SOBEL gradient operator
-            # mode = 'constant' fills values beyond edges with a constant value cval
-            s_x = ndimage.sobel(img, axis=0, mode='constant',cval = 0.0)
-            
-            # y-directional SOBEL gradient operator
-            s_y = ndimage.sobel(img, axis=1, mode='constant',cval = 0.0)
-            
-            # Our combined filter response is the hypotenuse of the x- and y-components
-            sobel[i] = np.hypot(s_x, s_y)
-        
-        return sobel
-    
-    Xtrain_sob = sobel(Xtrain_eq)
-    Xval_sob = sobel(Xval_eq)
-    Xtest_sob = sobel(Xtest_eq)
+
+    Xtrain_sob =  prp.sobel(Xtrain_eq, surpress=False)
+    Xval_sob   =  prp.sobel(Xval_eq, surpress=True)
+    Xtest_sob  =  prp.sobel(Xtest_eq, surpress=True)
     
     # %% Flatten image data to 1D feature vector...
     """
     P R E - P R O C E S S :   F L A T T E N   T O  1 D - F E A T U R E   V E C T O R
     """
     
-    def flatten(img_arr):
-        N,h,w = img_arr.shape
-        flattened = np.reshape(img_arr,(N,(h*w)))
-        return flattened
-    
-    Xtrain_flat = flatten(Xtrain_sob)
-    Xval_flat = flatten(Xval_sob)
-    Xtest_flat = flatten(Xtest_sob)
+    Xtrain_flat =  prp.flatten(Xtrain_sob)
+    Xval_flat   =  prp.flatten(Xval_sob)
+    Xtest_flat  =  prp.flatten(Xtest_sob)
     
     # %%
     """
@@ -169,50 +139,28 @@ if __name__ == '__main__':
     # Apply the transformation to the training, validation and testing data
     Xtrain_scl  =   scaler.transform(Xtrain_flat)
     Xval_scl    =   scaler.transform(Xval_flat)
-    Xtest_scl   =   scaler.transform(Xtest_flat)
-    
-    
+    Xtest_scl   =   scaler.transform(Xtest_flat) 
     
     # %% Prepare label data...
     """
     P R E P A R E   L A B E L   D A T A
     """
     
-    # The keras utilities module contains a function to transform data to
-    # one hot vector
-    from keras.utils import to_categorical
-    
-    def to_one_hot_vector(label_data,category):
-        
-        # Transform a column of a label dataframe to one hot vector
-        labels = label_data.loc[:,category].copy()
-        one_hot_vec = to_categorical(labels)
-        
-        return one_hot_vec
-    
-    def to_binary(label_data,category):
-    
-        # Transform -1 | 1 categorised data to 0 | 1 values
-        labels = label_data.loc[:,category].copy()
-        labels[labels<0] = 0
-        
-        return labels
-    
     # Transform the 'gender' column of the ytrain-, validation and test
     # labels to one hot vector
-    ytrain_A1 =  to_binary(ytrain,'gender')
-    yval_A1   =  to_binary(yval,'gender')
-    ytest_A1  =  to_binary(ytest,'gender')
+    ytrain_A1 =  ds.to_binary(ytrain,'gender')
+    yval_A1   =  ds.to_binary(yval,'gender')
+    ytest_A1  =  ds.to_binary(ytest,'gender')
     
     # Transform the 'smiling' column of the ytrain-, validation and test
     # labels to one hot vector
-    ytrain_A2 =  to_one_hot_vector(ytrain,'smiling')
-    yval_A2   =  to_one_hot_vector(yval,'smiling')
-    ytest_A2  =  to_one_hot_vector(ytest,'smiling')
+    ytrain_A2 =  ds.to_one_hot_vector(ytrain,'smiling')
+    yval_A2   =  ds.to_one_hot_vector(yval,'smiling')
+    ytest_A2  =  ds.to_one_hot_vector(ytest,'smiling')
     
     # %% Perform Cross-Validation...
     """
-    B U I L D   P I P E L I N E :   P C A + S V M
+    T A S K   A 1 :   B U I L D   P I P E L I N E :   P C A + S V M
     """
 
     # Let us now import an unsupervised classifier for the
@@ -273,17 +221,58 @@ if __name__ == '__main__':
         joblib.dump(estimator, 'CV_object.pkl')
         
     # %%
+        
+    # %%
+    
     """
     T A S K   B :   C A R T O O N   D A T A S E T
     """
+
+    # Delete all variables
+    for name in dir():
+        if not name.startswith('_'):
+            del globals()[name]
+            
+    # Import garbage collection library 
+    import gc
     
-    # %%
+    # Explicitly free memory
+    gc.collect()
+    
+    # %% Import libraries...
+    """
+    L I B R A R Y   I M P O R T
+    """
+    
+    # To modularise the program, we need to add the current directory to sys path
+    import os
+    import sys
+    
+    # Grab the current file path...
+    currentPath = os.path.dirname(os.path.abspath(__file__))
+    
+    # ... and append it to the system path
+    sys.path.append(currentPath)
+    
+    # Now we can import our own modules into our script.
+    import import_data as ds
+    import split_dataset as sd
+    import pre_processing as prp
+    
+    # numpy for enhanced mathematical support
+    import numpy as np
+    # Matplotlib for visualisation
+    import matplotlib.pyplot as plt
+    # Pandas dataframes for enhanced data storage
+    import pandas as pd
+    
+    # %% Load data...
     """
     L O A D   D A T A
     """
     # Define a path to the data - REMEMBER TO RESET THIS BEFORE TURNING IN
-    img_path = "/Datasets/cartoon_set/img/"
-    label_path = "/Datasets/cartoon_set/"
+    img_path = "/Documents/UCL/ELEC0134 MLS-I Applied Machine Learning Systems/Assignments/Assignment/dataset_AMLS_20-21/cartoon_set/img/"
+    label_path = "/Documents/UCL/ELEC0134 MLS-I Applied Machine Learning Systems/Assignments/Assignment/dataset_AMLS_20-21/cartoon_set/"
     
     # Load image and label data with the novel 'import_data' module
     X , y , random_img = ds.dataImport(img_path,
@@ -292,7 +281,7 @@ if __name__ == '__main__':
                                        task='B',
                                        surpress=False,
                                        return_img_indices=True)
-    
+    # %% Split data...
     """
     S P L I T   D A T A
     """
@@ -302,38 +291,133 @@ if __name__ == '__main__':
     
     # %% Crop images...
     """
-    P R E - P R O C E S S :   C R O P   E Y E   R E G I O N
+    P R E - P R O C E S S :   C R O P   R E G I O N S   O F   I N T E R E S T
     """
     
-    def crop(img_arr):
+    def crop(img_arr,H,W,ver_off,hor_off):
         # Initialise an empty array that can accomodate as many instances
         # as the number of images we wish to crop, in the required final dimensions
         cropped = np.empty((img_arr.shape[0],
-                            35, # Final height 35 Px
-                            55, # Final width 55 Px
+                            H, # Final height in px
+                            W, # Final width in px
                             img_arr.shape[3]),int)
         
         # For each of the images provided
         for i,img in enumerate(img_arr):
-            # We store a cropped version, that crops a 35 x 55 px rectangle
-            # from the eye region
-            cropped[i] = img[245:245+35,180:180+55]
+            # We store a cropped version, that crops a H x W px rectangle
+            # from a supplied region with horizontal and vertical offsets
+            cropped[i] = img[ver_off:ver_off + H,hor_off:hor_off + W]
             
         return cropped
     
-    # We crop the training, validation and test data
-    Xtrain_C = crop(Xtrain)
-    Xval_C = crop(Xval)
-    Xtest_C = crop(Xtest)
+    # We crop the training, validation and test data to the face region for task B1
+    Xtrain_C_B1 = crop(Xtrain, H = 250, W = 220, ver_off = 150, hor_off = 140)
+    Xval_C_B1 = crop(Xval, H = 250, W = 220, ver_off = 150, hor_off = 140)
+    Xtest_C_B1 = crop(Xtest, H = 250, W = 220, ver_off = 150, hor_off = 140)
+    
+    # We crop the training, validation and test data to the eye region for task B2
+    Xtrain_C_B2 = crop(Xtrain, H = 35, W = 55, ver_off = 245, hor_off = 180)
+    Xval_C_B2 = crop(Xval, H = 35, W = 55, ver_off = 245, hor_off = 180)
+    Xtest_C_B2 = crop(Xtest, H = 35, W = 55, ver_off = 245, hor_off = 180)
+    
     # %% Grayscale images...
     """
     P R E - P R O C E S S :   G R A Y S C A L E 
     """
-    Xtrain_gry = prp.reduceRGB(Xtrain_C)
-    Xval_gry = prp.reduceRGB(Xval_C)
-    Xtest_gry = prp.reduceRGB(Xtest_C)
+    
+    # Grayscale face images for task B1 as shape classification is colour 
+    # independent
+    Xtrain_gry_B1 = prp.reduceRGB(Xtrain_C_B1)
+    Xval_gry_B1 = prp.reduceRGB(Xval_C_B1)
+    Xtest_gry_B1 = prp.reduceRGB(Xtest_C_B1)
+  
+    # Grayscale face images for task B2, for further processing to detect
+    # shaded eyeglasses
+    Xtrain_gry_B2 = prp.reduceRGB(Xtrain_C_B2)
+    Xval_gry_B2 = prp.reduceRGB(Xval_C_B2)
+    Xtest_gry_B2 = prp.reduceRGB(Xtest_C_B2)
+    
+        
+    # %% Prepare label data...
+    """
+    P R E P A R E   L A B E L   D A T A
+    """
+    
+    # Transform the 'gender' column of the ytrain-, validation and test
+    # labels to one hot vector
+    ytrain_B1 =  pd.Series.to_numpy(ytrain.loc[:,'face_shape'].copy())
+    yval_B1   =  pd.Series.to_numpy(yval.loc[:,'face_shape'].copy())
+    ytest_B1  =  pd.Series.to_numpy(ytest.loc[:,'face_shape'].copy())
+    
+    # Transform the 'smiling' column of the ytrain-, validation and test
+    # labels to one hot vector
+    ytrain_B2 =  pd.Series.to_numpy(ytrain.loc[:,'eye_color'].copy())
+    yval_B2   =  pd.Series.to_numpy(yval.loc[:,'eye_color'].copy())
+    ytest_B2  =  pd.Series.to_numpy(ytest.loc[:,'eye_color'].copy())
+    
+    # %%
+    
+    """
+    T A S K   B 1 :   F A C E   S H A P E   C L A S S I F I C A T I O N
+    """
+    
+    # %% Flatten data for task B1...
+    
+    # Flattens a library of grayscale images to N-samples of 1 dimension
+    def flatten(img_arr):
+        
+        dim = img_arr.ndim - 1 # 1st dimension is N-number of samples 
+        flat = 1 # Initalise the final dimension to be folded to
+        
+        # Flatten all but the 1st dimension
+        for i in range(dim):
+            flat *= img_arr.shape[i+1]
+        
+        # Reshape image array from N,h,w,channels, to N,(h * w)
+        flat_arr = np.reshape(img_arr,(img_arr.shape[0],flat))
+        
+        # Return the library of flattened objects
+        return flat_arr
+    
+    # Flatten the training, validation and test data to N-samples X 1D vector
+    Xtrain_B1 = flatten(Xtrain_gry_B1)
+    Xval_B1 = flatten(Xval_gry_B1)
+    Xtest_B1 = flatten(Xtest_gry_B1)
+    
+    # %% Task B1 with Logistic Regression
+    """
+    T A S K   B 1 :   F A C E   S H A P E   W/   L O G I S T I C   R E G R E S S I O N
+    """
+    from sklearn.preprocessing import MinMaxScaler
+    from sklearn.linear_model import LogisticRegression
+    from sklearn.metrics import confusion_matrix, classification_report,accuracy_score
+    
+    # sklearn functions implementation
+    def logRegrPredict(Xtrain,ytrain,Xtest, solver='lbfgs'):
+        # Build Logistic Regression Model
+        logreg = LogisticRegression(solver=solver,
+                                    C=5.0,
+                                    penalty='l2',
+                                    multi_class='multinomial',
+                                    max_iter = 100) 
+        
+        # Train the model using the training sets
+        logreg.fit(Xtrain, ytrain)
+        
+        ypred= logreg.predict(Xtest)
+        
+        return ypred
+
+    ypred_B1 = logRegrPredict(Xtrain_B1, ytrain_B1, Xtest_B1)
+    print(accuracy_score(ytest_B1,ypred_B1)) 
 
     # %%
+    
+    """
+    T A S K   B 2 :   E Y E   C O L O R   C L A S S I F I C A T I O N
+    """
+
+    # %% Detect dark eyeglasses...
     
     """
     P R E - P R O C E S S :   D E T E C T   D A R K   E Y E G L A S S E S
@@ -391,7 +475,7 @@ if __name__ == '__main__':
             fig,ax = plt.subplots(nrows=row,ncols=col)
             for i in range(row):
                 for j in range(col):
-                    ax[i][j].imshow(canny_img[rand_img[i][j]])
+                    ax[i][j].imshow(canny_img[rand_img[i][j]],cmap=plt.get_cmap("gray"))
                     ax[i][j].axis("off")
                     ax[i][j].set_title("{}".format(canny_values[rand_img[i][j]]))
             
@@ -402,9 +486,9 @@ if __name__ == '__main__':
         return canny_img, canny_values
     
     # Retrieve eye region imagery and feature values
-    Xtrain_CE_img , Xtrain_CE_val = detect_dark_glasses(Xtrain_gry)
-    Xval_CE_img , Xval_CE_val = detect_dark_glasses(Xval_gry, surpress = True)
-    Xtest_CE_img , Xtest_CE_val = detect_dark_glasses(Xtest_gry, surpress = True)
+    Xtrain_CE_img , Xtrain_CE_val = detect_dark_glasses(Xtrain_gry_B2)
+    Xval_CE_img , Xval_CE_val = detect_dark_glasses(Xval_gry_B2, surpress = True)
+    Xtest_CE_img , Xtest_CE_val = detect_dark_glasses(Xtest_gry_B2, surpress = True)
     
     # %%
     
@@ -431,43 +515,88 @@ if __name__ == '__main__':
     plt.tight_layout()
     plt.show()
     
-    # %%
+    # %% Grabbing the indices where glasses were detected in dataset...
     """
     I N D E X   D A R K   G L A S S E S
     """
     Xtrain_glasses = np.where(Xtrain_CE_val < 187)[0]
     Xtrain_no_glasses = np.where(Xtrain_CE_val >= 187)[0]
-    print(Xtrain_glasses)
-    print(Xtrain_no_glasses)
     
-    for i,index in enumerate(Xtrain_glasses[:20]):
-        plt.imshow(Xtrain_C[index])
-        plt.xticks([])
-        plt.yticks([])
-        plt.savefig("plots/glasses/{}".format(i))
-        
-    for i,index in enumerate(Xtrain_no_glasses[:20]):
-        plt.imshow(Xtrain_C[index])
-        plt.xticks([])
-        plt.yticks([])
-        plt.savefig("plots/no_glasses/{}".format(i))
+    Xval_glasses = np.where(Xval_CE_val < 187)[0]
+    Xval_no_glasses = np.where(Xval_CE_val >= 187)[0]
+    
+    Xtest_glasses = np.where(Xtest_CE_val < 187)[0]
+    Xtest_no_glasses = np.where(Xtest_CE_val >= 187)[0]
 
-    # %%
+    # %% Image prep method 1...
+    
+    # Only flatten the training, validation and test data to N-samples X 1D vector
+    Xtrain_B2 = flatten(Xtrain_C_B2)
+    Xval_B2 = flatten(Xval_C_B2)
+    Xtest_B2 = flatten(Xtest_C_B2)
+
+    # %% Image prep method 2...
     """
-    E Y E   C O L O R   C L A S S I F I C A T I O N
+    P R E P A R E   I M A G E S   E X C L U D I N G   D A R K   G L A S S E S 
     """
+   
+    # Define a function capable of filtering out label and image data given 
+    # a set of indices
+    def only_keep(where_no_glasses, img_arr_to_filter, label_arr_to_filter):
+        
+        # Create container for image data to keep, will be an array of 
+        # N samples, where N = number of indices where no glasses were detected
+        filtered_img_arr = np.empty((where_no_glasses.shape[0],
+                                     img_arr_to_filter.shape[1],
+                                     img_arr_to_filter.shape[2],
+                                     img_arr_to_filter.shape[3]))
+        # We must remove the corresponding label data as well, create container
+        filtered_label_arr = np.empty(where_no_glasses.shape[0])
+        
+        # For each of the image indices passed to us
+        for i,index in enumerate(where_no_glasses):
+            filtered_img_arr[i] = img_arr_to_filter[index]
+            filtered_label_arr[i] = label_arr_to_filter[index]
+            
+        return filtered_img_arr, filtered_label_arr
     
     
-    # %%
+    Xtrain_B2,ytrain_B2 = only_keep(Xtrain_no_glasses, Xtrain_C_B2, ytrain_B2)
+    Xval_B2,yval_B2 = only_keep(Xval_no_glasses, Xval_C_B2, yval_B2)
+    Xtest_B2,ytest_B2 = only_keep(Xtest_no_glasses, Xtest_C_B2, ytest_B2)
     
-    thresh = 199
+
     
-    for i in range(30):
-        print("Thresh: ", thresh)
-        print("Train : ", np.where(Xtrain_CE_val < thresh)[0].shape[0])
-        print("Val   : ", np.where(Xval_CE_val < thresh)[0].shape[0])
-        print("Test  : ", np.where(Xtest_CE_val < thresh)[0].shape[0])
-        print("Total : ", 1151 + 303 + 404)
-        print("-------------")
-        thresh -= 1
+    # %% Flatten data for task B2...
+        
+    # Flatten the training, validation and test data to N-samples X 1D vector
+    Xtrain_B2 = flatten(Xtrain_B2)
+    Xval_B2 = flatten(Xval_B2)
+    Xtest_B2 = flatten(Xtest_B2)
+   
+    # %% Task B2 with Logistic Regression
+    """
+    T A S K   B 2 :   E Y E   C O L O R   W/   L O G I S T I C   R E G R E S S I O N
+    """
+    from sklearn.preprocessing import MinMaxScaler
+    from sklearn.linear_model import LogisticRegression
+    from sklearn.metrics import confusion_matrix, classification_report,accuracy_score
     
+    # sklearn functions implementation
+    def logRegrPredict(Xtrain,ytrain,Xtest, solver='lbfgs'):
+        # Build Logistic Regression Model
+        logreg = LogisticRegression(solver=solver,
+                                    C=5.0,
+                                    penalty='l2',
+                                    multi_class='multinomial',
+                                    max_iter = 100) 
+        
+        # Train the model using the training sets
+        logreg.fit(Xtrain, ytrain)
+        
+        ypred= logreg.predict(Xtest)
+        
+        return ypred
+
+    ypred_B2 = logRegrPredict(Xtrain_B2, ytrain_B2, Xtest_B2)
+    print(accuracy_score(ytest_B2,ypred_B2))

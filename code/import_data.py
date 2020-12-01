@@ -2,8 +2,9 @@
 # -*- coding: utf-8 -*-
 """
 Created on Sat Nov  7 22:09:17 2020
-Module to import .jpg images from celeba dataset using the imageio Python lib
-Images are 178 x 218 px
+Module to import .jpg and .png images from celeba and cartoon dataset 
+using the imageio Python library. 
+
 
 @author: gardar
 """
@@ -20,9 +21,14 @@ import matplotlib.pyplot as plt
 # Import Pandas for convenient storage of data in DataFrames
 import pandas as pd
 
+# The keras utilities module contains a function to transform data to
+# one hot vector
+from keras.utils import to_categorical
+
 """
 C O N F I G U R E   M A T P L O T L I B
 """
+
 # Define font sizes
 SMALL = 12
 MEDIUM = 14
@@ -38,10 +44,7 @@ plt.rc('ytick', labelsize=SMALL)    # Fontsize of the y tick labels
 plt.rc('legend', fontsize=SMALL)    # Legend fontsize
 plt.rc('figure', titlesize=HUGE)    # Fontsize of the figure title
 
-"""
-I M A G E   I M P O R T
-"""
-
+# Image import function for dataset
 def importImages(img_path, img_type='.jpg', surpress=False):
     
     print('Importing image data...')
@@ -73,10 +76,7 @@ def importImages(img_path, img_type='.jpg', surpress=False):
     
     return X
 
-"""
-L A B E L   I M P O R T
-"""
-
+# Label import function for dataset
 def importLabels(label_path,surpress=False):
     
     print('Importing labels...')
@@ -105,10 +105,7 @@ def importLabels(label_path,surpress=False):
         pass
     return y
 
-"""
-I M P O R T   D A T A   &   V I S U A L I S E
-"""
-
+# Import function that uses importImages() and importLabels() and plots samples from data
 def dataImport(img_path,label_path,img_type='.jpg',task='A',surpress=False,return_img_indices=False):
     
     # We load image and label data to vectors X and y respectively
@@ -223,6 +220,24 @@ def dataImport(img_path,label_path,img_type='.jpg',task='A',surpress=False,retur
     # In other cases we just return the feature vector X and label vector y
     else:
         return X,y
+
+# Convert a category (column) of a Pandas Dataframe to one hot vector
+def to_one_hot_vector(label_data,category):
+    
+    # Transform a column of a label dataframe to one hot vector
+    labels = label_data.loc[:,category].copy()
+    one_hot_vec = to_categorical(labels)
+    
+    return one_hot_vec
+
+# Convert -1 / 1 categorised data to 0 / 1 binary values
+def to_binary(label_data,category):
+
+    # Transform -1 | 1 categorised data to 0 | 1 values
+    labels = label_data.loc[:,category].copy()
+    labels[labels<0] = 0
+    
+    return labels
 
 if __name__ == '__main__':
     

@@ -7,7 +7,9 @@ Created on Tue Nov 10 21:03:34 2020
 """
 import numpy as np
 import matplotlib.pyplot as plt
+from scipy import ndimage
 
+# Convert RGB image array to grayscale using Rec. 601 encoding
 def reduceRGB(X):
     """    
     Convert RGB image array to grayscale using Rec. 601 encoding
@@ -35,6 +37,7 @@ def reduceRGB(X):
     
     return X
 
+# Center image as deviation from mean of image set
 def centerImg(X, surpress=False,mean=None):
     """
     Center image as deviation from mean of image set
@@ -109,6 +112,7 @@ def centerImg(X, surpress=False,mean=None):
     
     return Xcenter, mean
 
+# Uses reduceRGB(X) and centerImg(X,mean) to pre-process images for PCA
 def imgProcessing(X,surpress=False,mean=None):
     """ 
     X is an unprocessed N x h x w x RGB array 
@@ -160,7 +164,8 @@ def imgProcessing(X,surpress=False,mean=None):
         pass
     
     return Xcenter,mean
-    
+
+# A hand-crafted PCA function using singular value decomposition    
 def PCA_w_SVD(Xcenter,surpress=False):
     """
     Here we perform principal component analysis on an imageset.
@@ -205,6 +210,7 @@ def PCA_w_SVD(Xcenter,surpress=False):
     
     return Sigma, WT
 
+# Displays eigenfaces
 def showEigenfaces(WT,X):
     """
     Plotting function to display 10 eigenfaces
@@ -242,6 +248,8 @@ def showEigenfaces(WT,X):
     
     return 
 
+# Fits an image array to a previously calulated eigenvector base and returns 
+# n number of principal components
 def fitPCA(WT,X,n_components=30):
     """
     Fits image array to an existing eigenvector base
@@ -270,3 +278,119 @@ def fitPCA(WT,X,n_components=30):
     Xfitted = Xfitted[:,:n_components]
     
     return Xfitted
+
+# Crop an image array given final height, width and crop offsets
+def crop(img_arr,H,W,ver_off,hor_off):
+    """
+    Given an image array, this function returns a region of interest supplied
+    by pixelwise height, width and horizontal- and vertical offsets from the
+    original images
+    
+    Parameters
+    ----------
+    img_arr: A library RGB(a) images
+    H: height of final images
+    W: width of final images
+    ver_off: vertical offset to crop from (V offset + height)
+    hor_off: horizontal offset to crop from (H offset + width)
+    
+    Returns
+    -------
+    cropped : An array of cropped images
+    
+    """
+    
+    # Initialise an empty array that can accomodate as many instances
+    # as the number of images we wish to crop, in the required final dimensions
+    cropped = np.empty((img_arr.shape[0],
+                        H, # Final height in px
+                        W, # Final width in px
+                        img_arr.shape[3]))
+    
+    # For each of the images provided
+    for i,img in enumerate(img_arr):
+        # We store a cropped version, that crops a H x W px rectangle
+        # from a supplied region with horizontal and vertical offsets
+        cropped[i] = img[ver_off:ver_off + H,hor_off:hor_off + W]
+        
+    return cropped
+
+# Apply Sobel filter for edge detection
+def sobel(img_arr, surpress=False):
+    
+    """
+    Given an image array, this function applies a Sobel-Feldman operator to the
+    pixels of the image. The Sobel-Feldman operator is a computationally in-
+    expensive isotropic gradient operator, namely a discrete differentation 
+    operator and is useful for edge detection in images, in the presence of 
+    little noise.
+    
+    Parameters
+    ----------
+    img_arr: A library RGB(a) images
+    surpress: An option to turn off outputs
+    
+    Returns
+    -------
+    sobel : An array of Sobel filtered images
+    
+    """
+    
+    # The sobel function assumes the dimensions of the image array it is passed
+    sobel = np.empty(img_arr.shape)
+    
+    for i,img in enumerate(img_arr):
+        
+        # x-directional SOBEL gradient operator
+        # mode = 'constant' fills values beyond edges with a constant value cval
+        s_x = ndimage.sobel(img, axis=0, mode='constant',cval = 0.0)
+        
+        # y-directional SOBEL gradient operator
+        s_y = ndimage.sobel(img, axis=1, mode='constant',cval = 0.0)
+        
+        # Our combined filter response is the hypotenuse of the x- and y-components
+        sobel[i] = np.hypot(s_x, s_y)
+    
+    # We may want to display the output of our function
+    if not surpress:
+        
+        random = np.random.randint(len(img_arr))
+        
+        fig,ax = plt.subplots(1,2,figsize=(6,6))
+        # Plot original
+        ax[0].imshow(img_arr[random], cmap=plt.get_cmap("gray"))
+        ax[0].set_title("Passed sample image")
+        ax[0].axis("off")
+        
+        ax[1].imshow(sobel[random], cmap=plt.get_cmap("gray"))
+        ax[1].set_title("Sobel filtered")
+        ax[1].axis("off")
+        
+    return sobel
+
+# Flatten an image array of:  N x h x w (x Channels) ->  to  ->  N x dim
+def flatten(img_arr):
+    """
+    Flattens a library of grayscale images to N-samples of 1 dimension
+    
+    Parameters
+    ----------
+    img_arr: A library RGB(a) images
+    
+    Returns
+    -------
+    flat_arr : An array of N x dim dimensions
+    
+    """
+    dim = img_arr.ndim - 1 # 1st dimension is N-number of samples 
+    flat = 1 # Initalise the final dimension to be folded to
+    
+    # Flatten all but the 1st dimension
+    for i in range(dim):
+        flat *= img_arr.shape[i+1]
+    
+    # Reshape image array from N,h,w,channels, to N,(h * w)
+    flat_arr = np.reshape(img_arr,(img_arr.shape[0],flat))
+    
+    # Return the library of flattened objects
+    return flat_arr

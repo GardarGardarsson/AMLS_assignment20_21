@@ -25,10 +25,10 @@ from sklearn.model_selection import train_test_split
 
 def split_dataset(X,y,test_size=0.2,val_size=0.2,surpress=False):
     # Split data to train and test sets
-    Xtrain,Xtest,ytrain,ytest = train_test_split(X,y,test_size=0.2)
+    Xtrain,Xtest,ytrain,ytest = train_test_split(X,y,test_size=test_size)
         
     # Split train set to train end validation sets
-    Xtrain,Xval,ytrain,yval = train_test_split(Xtrain,ytrain,test_size=0.2)
+    Xtrain,Xval,ytrain,yval = train_test_split(Xtrain,ytrain,test_size=val_size)
     
     # We may choose to surpress outputs of this function
     if not surpress:
@@ -40,7 +40,7 @@ def split_dataset(X,y,test_size=0.2,val_size=0.2,surpress=False):
         labels = ['Train: '+str(len(Xtrain)),'Validation: '+str(len(Xval)),'Test: '+str(len(Xtest))]
             
         # Pie chart, where the slices will be ordered and plotted counter-clockwise:
-        explode = (0, 0.1, 0)  # only "explode" the 2nd slice (i.e. 'Hogs')
+        explode = (0, 0.1, 0.1)  # Explode slices 1 and 3ß
         
         fig1, ax1 = plt.subplots()
         ax1.pie(sizes, explode=explode, labels=labels, autopct='%1.1f%%',
