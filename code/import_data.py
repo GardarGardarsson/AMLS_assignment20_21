@@ -154,7 +154,7 @@ def dataImport(img_path,label_path,img_type='.jpg',task='A',surpress=False,retur
                         ax[i,j].set_title(title)
                         
                 # Set tight layout and display the plot
-                plt.suptitle('Randomly chosen images and corresponding labels from set')
+                plt.suptitle('Randomly selected images and corresponding labels from set')
                 plt.tight_layout()
                 plt.show()
   
@@ -204,7 +204,7 @@ def dataImport(img_path,label_path,img_type='.jpg',task='A',surpress=False,retur
                     ax[i,j].set_title(title)
                     
             # Set tight layout and display the plot
-            plt.suptitle('Randomly chosen images and corresponding labels from set')
+            plt.suptitle('Randomly selected images and corresponding labels from set')
             plt.tight_layout()
             plt.show()
             
@@ -238,6 +238,55 @@ def to_binary(label_data,category):
     labels[labels<0] = 0
     
     return labels
+
+# Extract column from dataframe
+def get_category(label_data,category):
+
+    # Transform -1 | 1 categorised data to 0 | 1 values
+    labels = label_data.loc[:,category].copy()
+    
+    return labels
+
+# Threw this function together to use further throughout code.
+def plot_celeba(img_arr,labels, nrows, ncols):
+    
+    # Let's print a couple of random images from our imported data with corresponding labels
+    random_img = np.random.randint(len(labels), size=(nrows,ncols))
+    
+    # Define a tuple to iterate over
+    row, col = random_img.shape
+    
+    # Define layout and size of subplot
+    fig, ax = plt.subplots(nrows=row, ncols=col,figsize=(20,25))
+    
+    labels = labels.reset_index(drop=True)
+    print(random_img)
+    # Let's populate our 2x3 subplot
+    for i in range(row) :
+        for j in range(col):
+            # We extract a 4D array from our image library
+            extract = img_arr[(random_img[i,j]),:,:,:]
+            # Get rid of the 4th dimension, i.e. squeeze back to 3D
+            img = np.squeeze(extract)
+            
+            # We can then plot the image using matplotlib's .imshow() function
+            ax[i,j].imshow(img)
+            # Turn off plot axes
+            ax[i,j].axis("off")
+            
+            # Set the title of each image as the corresponding labels
+            gender = labels.loc[random_img[i,j],'gender']
+            smiling = labels.loc[random_img[i,j],'smiling']
+            img_name = labels.loc[random_img[i,j],'img_name']
+            title = "Gender: {} \n Smiling: {}\nFilename: {}".format(("Female" if gender == -1 else "Male"),
+                                                      ("No" if smiling == -1 else "Yes"),img_name)
+            ax[i,j].set_title(title)
+            
+    # Set tight layout and display the plot
+    plt.suptitle('Some misclassified samples')
+    plt.tight_layout()
+    plt.show()
+    return
 
 if __name__ == '__main__':
     

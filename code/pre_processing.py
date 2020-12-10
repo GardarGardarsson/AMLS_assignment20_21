@@ -8,6 +8,7 @@ Created on Tue Nov 10 21:03:34 2020
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy import ndimage
+import cv2
 
 # Convert RGB image array to grayscale using Rec. 601 encoding
 def reduceRGB(X):
@@ -300,6 +301,8 @@ def crop(img_arr,H,W,ver_off,hor_off):
     
     """
     
+    print("Cropping images to final size: {} x {} px...".format(H,W))
+    
     # Initialise an empty array that can accomodate as many instances
     # as the number of images we wish to crop, in the required final dimensions
     cropped = np.empty((img_arr.shape[0],
@@ -336,6 +339,8 @@ def sobel(img_arr, surpress=False):
     
     """
     
+    print("Applying Sobel filter...")
+    
     # The sobel function assumes the dimensions of the image array it is passed
     sobel = np.empty(img_arr.shape)
     
@@ -368,6 +373,67 @@ def sobel(img_arr, surpress=False):
         
     return sobel
 
+# SURF feature descriptor
+def surf(img_arr, n_keypoints, hessianThreshold, upright=True, surpress = False):
+    
+    """
+    Given an image array, this function performs SURF feature extraction
+    SURF is a faster alternative to SIFT that yields similar results
+    
+    Parameters
+    ----------
+    img_arr: A library RGB(a) images
+    surpress: An option to turn off outputs
+    
+    Returns
+    -------
+    sobel : An array of Sobel filtered images
+    
+    """
+    print("Extracting {} SURF feature keypoints from images...".format(n_keypoints))
+        
+    surf_des = []
+    
+    # Create a SURF detector with a defined hessianThreshold and directionality
+    surf = cv2.xfeatures2d.SURF_create(hessianThreshold=hessianThreshold, 
+                                       #nOctaves=None, 
+                                       #nOctaveLayers=None,
+                                       #extended=None, 
+                                       upright=upright) # Rotation (in/)variant application    
+    for img in img_arr: 
+        # Calculate SURF
+        kp,des = surf.detectAndCompute(img,None)
+        # Smallest keypoint array depends on the hessian threshold.
+        # A higher hessian threshold is correlated with fewer but more salient features.
+        # This was found as ~20 for the hessian threshold 400, i.e. we can
+        # retain only 20 keypoints from our images if we are to treat the
+        # imageset without discrimination. This suggests we should skip PCA.
+        surf_des.append(des[:n_keypoints])
+    
+    surf_des = np.array(surf_des)
+    
+    print(np.array(des[:n_keypoints]).shape)
+    print(surf_des.shape)
+    
+    # We may want to display the output of our function
+    if not surpress:
+        
+        # Always apply on last img in array to save on computation
+        # i.e. I'm not saving the keypoints in an object, only the descriptors
+        kp_img = cv2.drawKeypoints(img,kp[:n_keypoints],None,(255,0,0),4)
+            
+        fig,ax = plt.subplots(1,2,figsize=(6,6))
+        # Plot original
+        ax[0].imshow(img, cmap=plt.get_cmap("gray"))
+        ax[0].set_title("Passed image")
+        ax[0].axis("off")
+        
+        ax[1].imshow(kp_img)
+        ax[1].set_title("{} SURF keypoints".format(n_keypoints))
+        ax[1].axis("off")
+        
+    return surf_des
+
 # Flatten an image array of:  N x h x w (x Channels) ->  to  ->  N x dim
 def flatten(img_arr):
     """
@@ -382,6 +448,9 @@ def flatten(img_arr):
     flat_arr : An array of N x dim dimensions
     
     """
+    
+    print("Flattening image array...")
+    
     dim = img_arr.ndim - 1 # 1st dimension is N-number of samples 
     flat = 1 # Initalise the final dimension to be folded to
     

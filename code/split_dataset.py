@@ -23,15 +23,17 @@ import matplotlib.pyplot as plt
 # Scikit learn for splitting the datasets into train, validation and test folds
 from sklearn.model_selection import train_test_split
 
-def split_dataset(X,y,test_size=0.2,val_size=0.2,surpress=False):
+def split_dataset(X,y,test_size=0.2,val_size=None,surpress=False):
     # Split data to train and test sets
     Xtrain,Xtest,ytrain,ytest = train_test_split(X,y,test_size=test_size)
-        
-    # Split train set to train end validation sets
-    Xtrain,Xval,ytrain,yval = train_test_split(Xtrain,ytrain,test_size=val_size)
+
+    # If user asks for a validation fold as well
+    if val_size:            
+        # Split train set to train end validation sets
+        Xtrain,Xval,ytrain,yval = train_test_split(Xtrain,ytrain,test_size=val_size)
     
-    # We may choose to surpress outputs of this function
-    if not surpress:
+    # We may choose to surpress outputs of this function 3 piece pie chart
+    if not surpress and val_size:
         # Displaying segmentation of dataset
         print('Plotting the dataset split...')
         
@@ -49,11 +51,29 @@ def split_dataset(X,y,test_size=0.2,val_size=0.2,surpress=False):
         plt.suptitle('Dataset split')
         plt.show()
         
+    # 2 piece pie chart - sorry for how messy this is but am revising this late in the process.
+    else: 
+        # Displaying segmentation of dataset
+        print('Plotting the dataset split...')
+        
+        # Display the splits in a pie chart
+        sizes = [(len(Xtrain)/len(X)*100),(len(Xtest)/len(X)*100)]
+        labels = ['Train: '+str(len(Xtrain)),'Test: '+str(len(Xtest))]
+            
+        # Pie chart, where the slices will be ordered and plotted counter-clockwise:
+        explode = (0, 0.1)  # Explode slices 1 and 3ß
+        
+        fig1, ax1 = plt.subplots()
+        ax1.pie(sizes, explode=explode, labels=labels, autopct='%1.1f%%',
+                shadow=True, startangle=90)
+        ax1.axis('equal')  # Equal aspect ratio ensures that pie is drawn as a circle.
+        plt.suptitle('Dataset split')
+        plt.show()
+    
+    if val_size:    
+        return Xtrain,Xval,Xtest,ytrain,yval,ytest
     else:
-        pass 
-    
-    return Xtrain,Xval,Xtest,ytrain,yval,ytest
-    
+        return Xtrain, Xtest, ytrain,ytest
     
 if __name__ == '__main__':
     # Define a path to the data - REMEMBER TO RESET THIS BEFORE TURNING IN
