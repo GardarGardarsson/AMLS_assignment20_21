@@ -14,18 +14,46 @@ currentPath = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(currentPath)
 
 # Now we can import our own modules into our script.
-import import_data as ds
-import split_dataset as sd
-import pre_processing as prp
-import user_interface as ui
-import performance_analysis as pa
+import Modules.import_data as ds
+import Modules.split_dataset as sd
+import Modules.pre_processing as prp
+import Modules.user_interface as ui
+import Modules.performance_analysis as pa
 
 # numpy for enhanced mathematical support
 import numpy as np
 # Matplotlib for visualisation
 import matplotlib.pyplot as plt
+
 # Pandas dataframes for enhanced data storage
 import pandas as pd
+
+# To perform Contrast Limited Adaptive Histogram Equalisation (CLAHE)
+# we import a scikit-image package
+from skimage.exposure import equalize_adapthist
+# Import the Histogram of Oriented Gradients feature descriptor
+from skimage.feature import hog
+# Import a standard scaler
+from sklearn.preprocessing import StandardScaler
+# Let us now import an unsupervised classifier for the
+# dimensionality reduction of the data, namely that of PCA
+from sklearn.decomposition import PCA
+# We will also use the SVM classifier of the scikit-learn library
+from sklearn.svm import SVC        # Different kernels were tested but linear one's yielded suprisingly high accuracy scores
+from sklearn.svm import LinearSVC  # For this sake, CV was performed again with LinearSVC, to be able to try 
+                                   # out different regularisation methods (L1 or L2 penalty), and loss functions 
+                                   # (hinge or squared-hinge)
+                                   
+# To optimise the number of components, and parameters of our SVM,
+# we shall construct a pipeline, and perform a gridsearch to find
+# both the optimal number of principal components and hyperparameters for the SVM.
+from sklearn.pipeline import Pipeline
+from sklearn.model_selection import GridSearchCV, ShuffleSplit
+
+# So we don't have to perform the CV numerous times, i.e. can save results, we import joblib
+import joblib
+# Scikit-Learn metrics
+from sklearn.metrics import plot_confusion_matrix,accuracy_score,classification_report
 
 # %% Load data...
 
@@ -34,20 +62,28 @@ if __name__ == '__main__':
     """
     L O A D   D A T A
     """
-    # Define a path to the data - REMEMBER TO RESET THIS BEFORE TURNING IN
-    img_path = "/Documents/UCL/ELEC0134 MLS-I Applied Machine Learning Systems/Assignments/Assignment/dataset_AMLS_20-21/celeba/img/"
-    label_path = "/Documents/UCL/ELEC0134 MLS-I Applied Machine Learning Systems/Assignments/Assignment/dataset_AMLS_20-21/celeba/"
+    # Define a path to the data
+    img_path = "/Datasets/celeba/img/"
+    label_path = "/Datasets/celeba/"
+    img_ts_path = "/Datasets/celeba_test/img/"
+    label_ts_path = "/Datasets/celeba_test/"
+    
     
     # Load image and label data with the novel 'import_data' module
     X , y , random_img = ds.dataImport(img_path,label_path,surpress=False,return_img_indices=True)
     
+    # Test set
+    Xts , yts  = ds.dataImport(img_ts_path,label_ts_path,surpress=True,return_img_indices=False)
     
     #%% Crop images...
     
     """
     P R E - P R O C E S S :   C R O P
     """
-    X_C =  prp.crop(X, H=178, W=178, ver_off=20,hor_off=0)
+    X_C =  prp.crop(X, H=176, W=176, ver_off=21,hor_off=0)
+    
+    # Test set
+    X_C_ts =  prp.crop(Xts, H=176, W=176, ver_off=21,hor_off=0)
     
     #%% Grayscale images...
     
@@ -58,15 +94,39 @@ if __name__ == '__main__':
     # Reduce the RGB channels to a singular gray channel using Rec. 601 encoding
     X_gry =  prp.reduceRGB(X_C).astype(np.uint16)
     
+    # Test set 
+    X_gry_ts = prp.reduceRGB(X_C_ts).astype(np.uint16)
+    
+    #%% Perform histogram equalization...
+    
+    """
+    P R E - P R O C E S S :   H I S T O G R A M   E Q U A L I S A T I O N
+    """
+    
+    # Most pre-processing methods benefit from image equalisation to reduce
+    # the influence of illumination effects on the result.
+    # This method proved very helpful for clean edge detection using the Sobel operator. 
+    # The HOG feature descriptor allows for global normalisation equalisation in it's function call
+    # CLAHE however seemed to yield less noise around edges and was hence chosen in it's favour
+    
+    print("Performing CLAHE, Contrast Limited Adaptive Histogram Equalisation, this may take a while...")
+    
+    # We equalize all the image data using an adaptive contrast equaliser
+    X_eq   =  equalize_adapthist(X_gry)    
+    
+    # Test set
+    X_eq_ts   =  equalize_adapthist(X_gry_ts)
     
     # %% Split data to training and test folds...
     """
     S P L I T   D A T A
     """
     
-    # Split dataset into train-, validation- and test folds
-    Xtrain,Xtest,ytrain,ytest = sd.split_dataset(X_gry,y,test_size=0.2,surpress=False)
-        
+    # We split the data here, as we intend to augment only the training image space
+    
+    # Split dataset into train- and test folds
+    Xtrain,Xtest,ytrain,ytest = sd.split_dataset(X_eq,y,test_size=0.2,surpress=False)
+
     # %% Augment data...
     
     """
@@ -83,8 +143,9 @@ if __name__ == '__main__':
     
     print("Enriching training sample space with horizontally mirrored images...")
     
-    # Enrich the sample space with augmented images (horizontally flip)
+    # Enrich the sample space with augmented images (horizontally flipped)
     Xtrain = np.concatenate((Xtrain,flip_horizontal(Xtrain)))
+    
     # Appending labels to label set
     ytrain = pd.concat([ytrain,ytrain]) 
     ytrain.reset_index(drop=True, inplace=True)
@@ -118,16 +179,13 @@ if __name__ == '__main__':
         
         print("Generating HOG feature descriptors...")
         
-        # Import the Histogram of Oriented Gradients feature descriptor
-        from skimage.feature import hog
-        
         # Define the settings for our HOG descriptor
-        settings = {'orientations'      :   12,
+        settings = {'orientations'      :   8,
                     'pixels_per_cell'   :   (8, 8),
                     'cells_per_block'   :   (1, 1), 
                     'block_norm'        :   'L2-Hys', 
                     'visualize'         :   False, 
-                    'transform_sqrt'    :   True, # Global normalisation
+                    'transform_sqrt'    :   False, # Global normalisation
                     'feature_vector'    :   True,
                     'multichannel'      :   False }
         
@@ -136,35 +194,16 @@ if __name__ == '__main__':
         Xtrain_hog_d    = np.array([ hog(img , **settings ) for img in Xtrain ])  
         Xtest_hog_d     = np.array([ hog(img , **settings ) for img in Xtest  ])  
         
+        # Test set
+        Xts_hog_d       = np.array([ hog(img , **settings ) for img in X_eq_ts])  
+        
         # Passing pre-processed object to placeholder for classification task
         Xtrain_pre  =   Xtrain_hog_d
         Xtest_pre   =   Xtest_hog_d
         
-        
-    #%% Perform histogram equalization...
+        # Test set
+        Xts_pre     =   Xts_hog_d
     
-    """
-    P R E - P R O C E S S :   H I S T O G R A M   E Q U A L I S A T I O N
-    """
-    
-    # Most pre-processing methods benefit from image equalisation to reduce
-    # the influence of illumination effects on the result.
-    # This method proved very helpful for clean edge detection using the Sobel operator. 
-    # The HOG feature descriptor allows for global normalisation equalisation 
-    
-    # We use CLAHE with Sobel (2), SURF (3) and when no feature extr. (4) was chosen
-    if selection == 2 or selection == 3 or selection == 4: 
-        
-        # To perform Contrast Limited Adaptive Histogram Equalisation (CLAHE)
-        # we import a scikit-image package
-        from skimage.exposure import equalize_adapthist
-        
-        print("Performing CLAHE, Contrast Limited Adaptive Histogram Equalisation, this may take a while...")
-        
-        # We equalize all the image data using an adaptive contrast equaliser
-        Xtrain_eq   =  equalize_adapthist(Xtrain)
-        Xtest_eq    =  equalize_adapthist(Xtest)
-        
     #%% Edge detection with Sobel-Feldman operator...
     
     """
@@ -176,13 +215,18 @@ if __name__ == '__main__':
     
     if selection == 2: 
         
-        Xtrain_sob  =  prp.sobel(Xtrain_eq , surpress=False)
-        Xtest_sob   =  prp.sobel(Xtest_eq  , surpress=True)
+        Xtrain_sob  =  prp.sobel(Xtrain , surpress=False)
+        Xtest_sob   =  prp.sobel(Xtest  , surpress=True)
+        
+        # Test set
+        Xts_sob     =  prp.sobel(X_eq_ts)
         
         # Passing pre-processed object to placeholder for classification task
         Xtrain_pre  =   Xtrain_sob
         Xtest_pre   =   Xtest_sob
         
+        # Test set
+        Xts_pre     =   Xts_sob
     
     #%% Feature description with SURF...
     
@@ -194,19 +238,23 @@ if __name__ == '__main__':
         
         # The OpenCV SURF feature detector requires single channel 0-255 UINT8 images
         # Scale images from 0...1 floating point to 0...255 unsigned 8-bit integer
-        Xtrain_imgs = np.array([( img * 255).astype(np.uint8) for img in Xtrain_eq ]) 
-        Xtest_imgs  = np.array([( img * 255).astype(np.uint8) for img in Xtest_eq  ]) 
+        Xtrain_imgs = np.array([( img * 255).astype(np.uint8) for img in Xtrain ]) 
+        Xtest_imgs  = np.array([( img * 255).astype(np.uint8) for img in Xtest  ]) 
+        # Test set
+        Xts_imgs    = np.array([( img * 255).astype(np.uint8) for img in X_eq_ts  ]) 
         
-        Xtrain_surf = prp.surf(Xtrain_imgs, n_keypoints = 20, hessianThreshold = 400, 
-                          upright = False, surpress = False)
-        
-        Xtest_surf = prp.surf(Xtest_imgs, n_keypoints = 20, hessianThreshold = 400, 
-                  upright = False, surpress = True)
+        # Extract SURF keypoints
+        Xtrain_surf = prp.surf(Xtrain_imgs, n_keypoints = 20, hessianThreshold = 400,upright = False, surpress = False)
+        Xtest_surf  = prp.surf(Xtest_imgs, n_keypoints = 20, hessianThreshold = 400,upright = False, surpress = True)
+        # Test set
+        Xts_surf    = prp.surf(Xts_imgs, n_keypoints = 20, hessianThreshold = 400,upright = False, surpress = True)
         
         # Passing pre-processed object to placeholder for classification task
         Xtrain_pre  =   Xtrain_surf
         Xtest_pre   =   Xtest_surf
         
+        # Test set
+        Xts_pre     =   Xts_surf
 
     #%% No further pre-processing, return equalised images...
     
@@ -217,8 +265,11 @@ if __name__ == '__main__':
     if selection == 4: 
         
         # Passing solely equalised object to placeholder for classification task
-        Xtrain_pre  =   Xtrain_eq
-        Xtest_pre   =   Xtest_eq
+        Xtrain_pre  =   Xtrain
+        Xtest_pre   =   Xtest
+        
+        # Test set
+        Xts_pre     =   X_eq_ts
 
     # %% Flatten image data to 1D feature vector...
     
@@ -230,28 +281,30 @@ if __name__ == '__main__':
     if selection != 1: 
         Xtrain_flat =  prp.flatten(Xtrain_pre)
         Xtest_flat  =  prp.flatten(Xtest_pre)
+        Xts_flat    =  prp.flatten(Xts_pre)
     else: 
         Xtrain_flat =  Xtrain_pre
         Xtest_flat  =  Xtest_pre
+        Xts_flat    =  Xts_pre
     
     # %% Scale data...
     
     """
     P R E - P R O C E S S :   S C A L E   D A T A
     """
-    
-    # Import a standard scaler
-    from sklearn.preprocessing import StandardScaler
-    
+        
     print("Performing feature standardisation, scaling to zero mean with unit variance...")
     
     # Fit the scaler to the training data
-    scaler = StandardScaler().fit(Xtrain_flat)
+    scaler = StandardScaler()
+    scaler.fit(Xtrain_flat)
     
     # Apply the transformation to the training, validation and testing data
     Xtrain_scl  =   scaler.transform(Xtrain_flat)
     Xtest_scl   =   scaler.transform(Xtest_flat) 
-    
+
+    # Test set
+    Xts_scl = scaler.transform(Xts_flat)
     
     # %% Prepare label data...
     
@@ -261,67 +314,53 @@ if __name__ == '__main__':
     
     print("Preparing labels...")
     
-    # Transform the 'gender' column of the ytrain-, validation and test
-    # labels to one hot vector
+    # Extract the 'gender' column of the ytrain-, validation and test
     ytrain_A1 =  ds.get_category(ytrain,'gender')
     ytest_A1  =  ds.get_category(ytest,'gender')
     
-    # Transform the 'smiling' column of the ytrain-, validation and test
-    # labels to one hot vector
+    # Extract the 'smiling' column of the ytrain-, validation and test
     ytrain_A2 =  ds.get_category(ytrain,'smiling')
     ytest_A2  =  ds.get_category(ytest,'smiling')
     
+    # Test set
+    yts_A1  =  ds.get_category(yts,'gender')
+    yts_A2  =  ds.get_category(yts,'smiling')
     
     # %% Filenames for pickled Cross-Validation records...
+    
     """
     C V   R E C O R D   M A N A G E M E N T
     """
     
     # Filenames for Task A1 - Gender classification
-    cv_filename_A1 = {'1': 'CV_HOG_A1.pkl',
-                      '2': 'CV_Sobel_A1.pkl',
-                      '3': 'CV_SURF_A1.pkl',
-                      '4': 'CV_none_A1.pkl'}
+    cv_filename_A1 = {'1': 'CV_Records/CV_HOG_A1.pkl',
+                      '2': 'CV_Records/CV_Sobel_A1.pkl',
+                      '3': 'CV_Records/CV_SURF_A1.pkl',
+                      '4': 'CV_Records/CV_none_A1.pkl'}
     
     # Filenames for Task A2 - Smile classification
-    cv_filename_A2 = {'1': 'CV_HOG_A2.pkl',
-                      '2': 'CV_Sobel_A2.pkl',
-                      '3': 'CV_SURF_A2.pkl',
-                      '4': 'CV_none_A2.pkl'}
+    cv_filename_A2 = {'1': 'CV_Records/CV_HOG_A2.pkl',
+                      '2': 'CV_Records/CV_Sobel_A2.pkl',
+                      '3': 'CV_Records/CV_SURF_A2.pkl',
+                      '4': 'CV_Records/CV_none_A2.pkl'}
     
     # The filenames to be indexed depend on user's selection of pre-processing method
     selection_filenames = [cv_filename_A1[str(selection)],
                            cv_filename_A2[str(selection)]]
-
+    
     # %% Task A1 - Perform Cross-Validation...
     """
     T A S K   A 1 :   B U I L D   P I P E L I N E :   P C A + S V M
     """
-    # Let us now import an unsupervised classifier for the
-    # dimensionality reduction of the data, namely that of PCA
-    from sklearn.decomposition import PCA
-    
-    # We will also use the SVM classifier of the scikit-learn library
-    from sklearn.svm import LinearSVC
-    
-    # To optimise the number of components, and parameters of our SVM,
-    # we shall construct a pipeline, and perform a gridsearch to find
-    # both the optimal number of principal components and hyperparameters for the SVM.
-    from sklearn.pipeline import Pipeline
-    from sklearn.model_selection import GridSearchCV
-    
-    # So we don't have to perform the CV numerous times, i.e. can save results
-    import joblib
-    
     
     # If we don't have a record of previous cross-validation
     if not os.path.isfile(  selection_filenames[0]  ):
-        print("CV Records not found in directory, performing CV")
+        print("CV records not found in directory, performing cross-validation...")
         # We initialise an empty PCA model
         pca = PCA()
         
-        # Use a linear SVC
-        svm = LinearSVC()
+        # Use an SVC
+        svm = SVC()
         
         # Combine PCA and SVC to a pipeline
         pipe = Pipeline(steps=[('pca', pca), ('svm', svm)])
@@ -329,62 +368,61 @@ if __name__ == '__main__':
         # If user chose HOG, Sobel or no pre-processing
         if selection != 3:
             # Number of Principal components to try
-            n_components = [400,5808]
+            n_components = [300,500,1000]
         else: 
             # SURF carries so few keypoints that we must narrow the scope
             n_components = [10,20]
         
         # Parameters to try for the SVM and PCA
         params_grid = {
-        'svm__C': [5e-4],
-        'svm__penalty':['l1','l2'],
-        'svm__loss':['hinge','squared_hinge'],
-        'svm__dual':[False],
-        'pca__n_components': n_components
+        'svm__C':      [100,10,1,0.1],
+        'svm__kernel': ['rbf','poly','linear'],
+        'svm__degree': [2],
+        'svm__gamma':  ['scale','auto'],
+        'pca__n_components': n_components,
         }
         
         # Initialise the gridsearch cross validation
         estimator = GridSearchCV(pipe,                      # Use the PCA + SVM pipeline
                                  params_grid,               # For these SVM hyperparams (and components)
                                  scoring='accuracy',        # Score on validation accuracy
-                                 n_jobs = -1,                # Use 4 processors
+                                 n_jobs = 4,                # Use 2 processors
                                  return_train_score=True,   # Record the scores for later use
                                  verbose = 10)              # Print the process as it runs
         
         # Fit the model on the training data
         estimator.fit(Xtrain_scl, ytrain_A1)
         
-        # Output the best parameters and the score they achieved
-        print(estimator.best_params_, estimator.best_score_)
-        
         # Pickle the results for later consumption
         joblib.dump(estimator, selection_filenames[0])
     
     # If CV record exists
     else: 
-        print("CV Records found, loading from directory")
+        print("CV records found in directory, loading...")
         # We load it
         estimator = joblib.load(selection_filenames[0])
     
+    # Output the best parameters and the score they achieved
+    print(estimator.best_params_, estimator.best_score_)
+    
     # Store the best parameters for the SVM...
-    best_svm = {'C'       : estimator.best_params_['svm__C'],
-                'penalty' : estimator.best_params_['svm__penalty'],
-                'loss'    : estimator.best_params_['svm__loss'],
-                'dual'    : estimator.best_params_['svm__dual']
-                }
+    best_svm = {'kernel': estimator.best_params_['svm__kernel'],
+                'C'     : estimator.best_params_['svm__C'],
+                'gamma' : estimator.best_params_['svm__gamma']}
     
     # ... and number of components for PCA
     best_n_components = estimator.best_params_['pca__n_components']
     
     # Then redefine our classifiers, as their "ideal" version for the task
-    svm = LinearSVC(**best_svm)
+    svm = SVC(**best_svm)
     pca = PCA(n_components=best_n_components)
-    # %% Task A1 - Plot learning curves...
+    
+    # %%
     """
-    T A S K   A 1 :   P L O T   L E A R N I N G   C U R V E S
+    T A S K   A 1 :   F I T   C L A S S I F I E R S
     """    
     
-    from sklearn.model_selection import ShuffleSplit
+    print("\nFitting classifiers...") 
     
     # Fit the PCA classifier to the scaled training data
     pca.fit(Xtrain_scl)
@@ -393,62 +431,83 @@ if __name__ == '__main__':
     Xtrain_pc   =   pca.transform(Xtrain_scl)
     Xtest_pc    =   pca.transform(Xtest_scl)
     
-    # Fit SVM
-    svm.fit(Xtrain_pc, ytrain_A1)
+    # Test set
+    Xts_pc = pca.transform(Xts_scl)
     
+    # Fit SVM
+    svm.fit(Xtrain_pc,ytrain_A1)
+
+    # %% Task A1 - Plot learning curves...
+    """
+    T A S K   A 1 :   P L O T   L E A R N I N G   C U R V E S
+    """    
+    # Titles for learning curve plots
     prep_method  =  {'1': 'HOG & PCA',
                      '2': 'Sobel Operator & PCA',
                      '3': 'SURF & PCA',
                      '4': 'CLAHE & PCA'}
     
-    # Create plot
-    fig, axes = plt.subplots(3, 1, figsize=(10, 15))
+    # As this operation can take a while it can be skipped    
+    if ui.yes_no_menu("\nDo you want to plot the learning curves for Task A1 ?\n(This may take a while) [y] / [n] "):
+        
+        print("Plotting learning curves, this may take a while...")
+             
+        # Create plot
+        fig, axes = plt.subplots(3, 1, figsize=(10, 15))
+       
+        title = "Task A1 - {0} w/ {1} components\nSVM, {2} kernel, $C={3}$, $\gamma={4}$\nLearning curves".format(prep_method[str(selection)], pca.n_components, svm.kernel,svm.C,svm.gamma)
+        cv = ShuffleSplit(n_splits=10, test_size=0.2, random_state=0)
+        pa.plot_learning_curve(svm, title, Xtrain_pc, ytrain_A1, axes=axes, ylim=(0.7, 1.01),cv=cv, n_jobs=4)
+        plt.tight_layout()
+        plt.show()
     
-    title = "Task A1 - {} w/ {} components\nSVM, linear kernel, $C={}$\nLearning Curves".format(prep_method[str(selection)], pca.n_components,svm.C)
-    cv = ShuffleSplit(n_splits=10, test_size=0.2, random_state=0)
-    pa.plot_learning_curve(svm, title, Xtrain_pc, ytrain_A1, axes=axes, ylim=(0.7, 1.01),
-                        cv=cv, n_jobs=4)
-    plt.tight_layout()
-    plt.show()
     # %% Task A1 - Predict & report...
     """
     T A S K   A 1 :   P R E D I C T   &   R E P O R T
     """    
     
-    from sklearn.metrics import plot_confusion_matrix
-    from sklearn.metrics import accuracy_score
-    from sklearn.metrics import classification_report
-    
     # Predict on the training and unseen data
     yp_tr_A1 = svm.predict(Xtrain_pc)
     yp_te_A1 = svm.predict(Xtest_pc)
     
+    # Test set
+    yp_ts_A1 = svm.predict(Xts_pc)
+    
     # Store accuracy scores
     acc_A1_train =  accuracy_score(y_true = ytrain_A1, y_pred = yp_tr_A1)
-    acc_A1_test =   accuracy_score(y_true = ytest_A1 , y_pred = yp_te_A1)
+    acc_A1_test  =  accuracy_score(y_true = ytest_A1 , y_pred = yp_te_A1)
+    acc_A1_ts    =  accuracy_score(y_true = yts_A1, y_pred = yp_ts_A1)
     
     # Print results:
     print("Task A1:\n"+"-"*12+"\nTrain: {:.1f}% \nTest:  {:.1f}%".format(acc_A1_train*100,acc_A1_test*100))
     
+    # Test set:
+    print("Unseen Test Set: {:.1f}%".format(acc_A1_ts*100))
+    
     # Print classification report
     print("\n"*2+"Classification Report:\n"+"-"*54+"\n",classification_report(ytest_A1, yp_te_A1))
     
-    # Plot confusion matrix
-    disp = plot_confusion_matrix(svm,Xtest_pc,ytest_A1,normalize='true', display_labels=['Female','Male'],cmap='Blues')
-    disp.figure_.set_dpi(400)
-    disp.ax_.set_title("Task A1 - {} w/ {} components\nSVM, linear kernel, $C={}$\nConfusion matrix".format(prep_method[str(selection)], pca.n_components, svm.C))
-    plt.tight_layout()
-    plt.show()
+    if ui.yes_no_menu("Plot confusion matrix for task A1? [y] / [n]"):
+        # Plot confusion matrix
+        disp = plot_confusion_matrix(svm,Xtest_pc,ytest_A1,normalize='true', display_labels=['Female','Male'],cmap='Blues')
+        disp.figure_.set_dpi(400)
+        disp.ax_.set_title("Task A1 - {0} w/ {1} components\nSVM, {2} kernel, $C={3}$, $\gamma={4}$\nConfusion Matrix".format(prep_method[str(selection)], pca.n_components, svm.kernel,svm.C,svm.gamma))
+        plt.tight_layout()
+        plt.show()
+    
     
     # %% Check out misclassified instances...
+    """
+    T A S K   A 1 :   M I S C L A S S I F I E D
+    """ 
     
     # We may want to inspect if there is any commonality in the misclassified examples
-    
-    misclassified = np.where(ytest_A1 != yp_te_A1)    
-    miscl_labels = ytest.iloc[misclassified[0]]
-    miscl_imgs = X[miscl_labels.index]
-    
-    ds.plot_celeba(miscl_imgs,miscl_labels,5,6)
+    if ui.yes_no_menu("Show a sample of misclassified images? [y]/[n]"):
+        misclassified = np.where(ytest_A1 != yp_te_A1)    
+        miscl_labels  = ytest.iloc[misclassified[0]]
+        miscl_imgs    = X[miscl_labels.index]
+        
+        ds.plot_celeba(miscl_imgs,miscl_labels,5,6)
     
     # %% Task A2 - Perform Cross-Validation...
     """
@@ -457,7 +516,8 @@ if __name__ == '__main__':
     
     # If we don't have a record of previous cross-validation
     if not os.path.isfile(  selection_filenames[1]  ):
-        print("CV Records not found in directory, performing CV")
+            
+        print("CV records not found in directory, performing cross-validation...")
         # We initialise an empty PCA model
         pca = PCA()
         
@@ -470,17 +530,17 @@ if __name__ == '__main__':
         # If user chose HOG, Sobel or no pre-processing
         if selection != 3:
             # Number of Principal components to try
-            n_components = [100,500,1000]
+            n_components = [300,500,1000]
         else: 
             # SURF carries so few keypoints that we must narrow the scope
             n_components = [10,20]
         
         # Parameters to try for the SVM and PCA
         params_grid = {
-        'svm__C': [0.1 , 0.01],
-        'svm__kernel': ['linear','rbf','poly'],
+        'svm__C': [100,10,1,0.1],
+        'svm__kernel': ['rbf','poly','linear'],
         'svm__degree' : [2],
-        'svm__gamma': [0.1 , 0.01],
+        'svm__gamma': ['scale','auto'],
         'pca__n_components': n_components,
         }
         
@@ -495,20 +555,17 @@ if __name__ == '__main__':
         # Fit the model on the training data
         estimator.fit(Xtrain_scl, ytrain_A1)
         
-        # Output the best parameters and the score they achieved
-        print(estimator.best_params_, estimator.best_score_)
-        
         # Pickle the results for later consumption
         joblib.dump(estimator, selection_filenames[1])
     
     # If CV record exists
     else: 
-        print("CV Records found, loading from directory")
+        print("CV records found in directory, loading...")
         # We load it
         estimator = joblib.load(selection_filenames[1])
-        
-        # Output the best parameters and the score they achieved
-        print(estimator.best_params_, estimator.best_score_)
+    
+    # Output the best parameters and the score they achieved
+    print(estimator.best_params_, estimator.best_score_)
     
     # Store the best parameters for the SVM...
     best_svm = {'kernel': estimator.best_params_['svm__kernel'],
@@ -522,12 +579,10 @@ if __name__ == '__main__':
     svm = SVC(**best_svm)
     pca = PCA(n_components=best_n_components)
     
-    # %% Task A2 - Plot learning curves...
+    # %%
     """
-    T A S K   A 2 :   P L O T   L E A R N I N G   C U R V E S
-    """    
-    
-    from sklearn.model_selection import ShuffleSplit
+    T A S K   A 2 :   F I T   C L A S S I F I E R S
+    """ 
     
     # Fit the PCA classifier to the scaled training data
     pca.fit(Xtrain_scl)
@@ -536,50 +591,88 @@ if __name__ == '__main__':
     Xtrain_pc   =   pca.transform(Xtrain_scl)
     Xtest_pc    =   pca.transform(Xtest_scl)
     
+    # Test set
+    Xts_pc = pca.transform(Xts_scl)
+    
     # Fit SVM
     svm.fit(Xtrain_pc, ytrain_A2)
     
+    # %% Task A2 - Plot learning curves...
+    """
+    T A S K   A 2 :   P L O T   L E A R N I N G   C U R V E S
+    """    
+ 
+    # Titles for learning curve plots
     prep_method  =  {'1': 'HOG & PCA',
                      '2': 'Sobel Operator & PCA',
                      '3': 'SURF & PCA',
-                     '4': 'CLAHE & PCA'}
+                     '4': 'CLAHE & PCA'}   
+ 
+    # As this operation can take a while it can be skipped    
+    if ui.yes_no_menu("Do you want to plot the learning curves for Task A2 ?\n (This may take a while) [y] / [n] "):
     
-    # Create plot
-    fig, axes = plt.subplots(3, 1, figsize=(10, 15))
-    
-    title = "Task A2 - {} w/ {} components\nSVM, {}-kernel,$\gamma = {}$, $C={}$\nLearning Curves".format(prep_method[str(selection)], pca.n_components,svm.kernel, svm.gamma,svm.C)
-    cv = ShuffleSplit(n_splits=10, test_size=0.2, random_state=0)
-    pa.plot_learning_curve(svm, title, Xtrain_pc, ytrain_A2, axes=axes, ylim=(0.7, 1.01),
-                        cv=cv, n_jobs=4)
-    plt.show()
+        print("Plotting learning curves, this may take a while...")
+                
+        # Create plot
+        fig, axes = plt.subplots(3, 1, figsize=(10, 15))
+       
+        title = "Task A2 - {0} w/ {1} components\nSVM, {2} kernel, $C={3}$, $\gamma=1/{1}\sigma^2$\nLearning curves".format(prep_method[str(selection)], pca.n_components, svm.kernel,svm.C)
+        cv = ShuffleSplit(n_splits=10, test_size=0.2, random_state=0)
+        pa.plot_learning_curve(svm, title, Xtrain_pc, ytrain_A2, axes=axes, ylim=(0.7, 1.01),cv=cv, n_jobs=4)
+        plt.tight_layout()
+        plt.show()
     
     # %% Task A2 - Predict & report...
     """
     T A S K   A 2 :   P R E D I C T   &   R E P O R T
     """    
     
-    from sklearn.metrics import plot_confusion_matrix
-    from sklearn.metrics import accuracy_score
-    
     # Predict on the training and unseen data
     yp_tr_A2 = svm.predict(Xtrain_pc)
     yp_te_A2 = svm.predict(Xtest_pc)
     
+    # Test set
+    yp_ts_A2 = svm.predict(Xts_pc)
+    
     # Store accuracy scores
     acc_A2_train =  accuracy_score(y_true = ytrain_A2, y_pred = yp_tr_A2)
     acc_A2_test =   accuracy_score(y_true = ytest_A2 , y_pred = yp_te_A2)
+    acc_A2_ts   =   accuracy_score(y_true = yts_A2, y_pred = yp_ts_A2)
     
     # Print results:
     print("Task A2:\n"+"-"*12+"\nTrain: {:.1f}% \nTest:  {:.1f}%".format(acc_A2_train*100,acc_A2_test*100))
-    disp = plot_confusion_matrix(svm,Xtest_pc,ytest_A2,normalize='true', display_labels=['No smile','Smile'],cmap='Blues')
-    disp.figure_.set_dpi(400.0)
-    disp.ax_.set_title("Task A2 - {} w/ {} components\nSVM, {}-kernel,$\gamma = {}$, $C={}$\nConfusion matrix".format(prep_method[str(selection)], pca.n_components,svm.kernel, svm.gamma,svm.C))
-    plt.show()
+    
+    # Test set:
+    print("Unseen Test Set: {:.1f}%".format(acc_A2_ts*100))
+    
+    # Print classification report
+    print("\n"*2+"Classification Report:\n"+"-"*54+"\n",classification_report(ytest_A2, yp_te_A2))
+    
+    if ui.yes_no_menu("Plot confusion matrix for task A2? [y] / [n]"):
+        # Plot confusion matrix
+        disp = plot_confusion_matrix(svm,Xtest_pc,ytest_A2,normalize='true', display_labels=['Female','Male'],cmap='Blues')
+        disp.figure_.set_dpi(400)
+        disp.ax_.set_title("Task A2 - {0} w/ {1} components\nSVM, {2} kernel, $C={3}$, $\gamma={4}$\nConfusion Matrix".format(prep_method[str(selection)], pca.n_components, svm.kernel,svm.C,svm.gamma))
+        plt.tight_layout()
+        plt.show()
+    
+    # %% Check out misclassified instances...
+    """
+    T A S K   A 2 :   M I S C L A S S I F I E D
+    """ 
+        
+    # We may want to inspect if there is any commonality in the misclassified examples
+    if ui.yes_no_menu("Show a sample of misclassified images? [y]/[n]"):
+        misclassified = np.where(ytest_A2 != yp_te_A2)    
+        miscl_labels  = ytest.iloc[misclassified[0]]
+        miscl_imgs    = X[miscl_labels.index]
+        
+        ds.plot_celeba(miscl_imgs,miscl_labels,5,6)
     
     # %%
     
     """
-    T A S K   B :   C A R T O O N   D A T A S E T
+    C L E A R   M E M O R Y 
     """
 
     # Delete all variables
@@ -592,6 +685,12 @@ if __name__ == '__main__':
     
     # Explicitly free memory
     gc.collect()
+    
+    # %%
+    
+    """
+    B E G I N N I N G   O F   T A S K   B 
+    """
     
     # %% Import libraries...
     """
@@ -609,9 +708,11 @@ if __name__ == '__main__':
     sys.path.append(currentPath)
     
     # Now we can import our own modules into our script.
-    import import_data as ds
-    import split_dataset as sd
-    import pre_processing as prp
+    import Modules.import_data as ds
+    import Modules.user_interface as ui
+    import Modules.split_dataset as sd
+    import Modules.pre_processing as prp
+    import Modules.performance_analysis as pa
     
     # numpy for enhanced mathematical support
     import numpy as np
@@ -620,13 +721,22 @@ if __name__ == '__main__':
     # Pandas dataframes for enhanced data storage
     import pandas as pd
     
+    from sklearn.linear_model import LogisticRegression
+    from sklearn.metrics import accuracy_score, plot_confusion_matrix
+    from sklearn.preprocessing import MinMaxScaler
+    from sklearn.model_selection import GridSearchCV, ShuffleSplit
+     
     # %% Load data...
     """
     L O A D   D A T A
     """
-    # Define a path to the data - REMEMBER TO RESET THIS BEFORE TURNING IN
-    img_path = "/Documents/UCL/ELEC0134 MLS-I Applied Machine Learning Systems/Assignments/Assignment/dataset_AMLS_20-21/cartoon_set/img/"
-    label_path = "/Documents/UCL/ELEC0134 MLS-I Applied Machine Learning Systems/Assignments/Assignment/dataset_AMLS_20-21/cartoon_set/"
+    # Define a path to the data
+    img_path = "/Datasets/cartoon_set/img/"
+    label_path = "/Datasets/cartoon_set/"
+    
+    # Test set
+    img_ts_path = "/Datasets/cartoon_set_test/img/"
+    label_ts_path = "/Datasets/cartoon_set_test/"
     
     # Load image and label data with the novel 'import_data' module
     X , y , random_img = ds.dataImport(img_path,
@@ -635,44 +745,30 @@ if __name__ == '__main__':
                                        task='B',
                                        surpress=False,
                                        return_img_indices=True)
+    # Test set
+    Xts , yts  = ds.dataImport(img_ts_path,label_ts_path,img_type='.png',task='B',surpress=True,return_img_indices=False)
+    
     # %% Split data...
     """
     S P L I T   D A T A
     """
     # Split dataset into train-, validation- and test folds
-    Xtrain,Xval,Xtest,ytrain,yval,ytest = sd.split_dataset(X,y,test_size=0.2,val_size=0.2,surpress=False)
-    
+    Xtrain,Xtest,ytrain,ytest = sd.split_dataset(X,y,test_size=0.2,surpress=False)
     
     # %% Crop images...
     """
     P R E - P R O C E S S :   C R O P   R E G I O N S   O F   I N T E R E S T
     """
     
-    def crop(img_arr,H,W,ver_off,hor_off):
-        # Initialise an empty array that can accomodate as many instances
-        # as the number of images we wish to crop, in the required final dimensions
-        cropped = np.empty((img_arr.shape[0],
-                            H, # Final height in px
-                            W, # Final width in px
-                            img_arr.shape[3]),int)
-        
-        # For each of the images provided
-        for i,img in enumerate(img_arr):
-            # We store a cropped version, that crops a H x W px rectangle
-            # from a supplied region with horizontal and vertical offsets
-            cropped[i] = img[ver_off:ver_off + H,hor_off:hor_off + W]
-            
-        return cropped
-    
     # We crop the training, validation and test data to the face region for task B1
-    Xtrain_C_B1 = crop(Xtrain, H = 250, W = 220, ver_off = 150, hor_off = 140)
-    Xval_C_B1 = crop(Xval, H = 250, W = 220, ver_off = 150, hor_off = 140)
-    Xtest_C_B1 = crop(Xtest, H = 250, W = 220, ver_off = 150, hor_off = 140)
+    Xtrain_C_B1 = prp.crop(Xtrain,  H = 250, W = 220, ver_off = 150, hor_off = 140)
+    Xtest_C_B1  = prp.crop(Xtest,   H = 250, W = 220, ver_off = 150, hor_off = 140)
+    Xts_C_B1    = prp.crop(Xts,     H = 250, W = 220, ver_off = 150, hor_off = 140)
     
     # We crop the training, validation and test data to the eye region for task B2
-    Xtrain_C_B2 = crop(Xtrain, H = 35, W = 55, ver_off = 245, hor_off = 180)
-    Xval_C_B2 = crop(Xval, H = 35, W = 55, ver_off = 245, hor_off = 180)
-    Xtest_C_B2 = crop(Xtest, H = 35, W = 55, ver_off = 245, hor_off = 180)
+    Xtrain_C_B2 = prp.crop(Xtrain,  H = 35, W = 55, ver_off = 245, hor_off = 180)
+    Xtest_C_B2  = prp.crop(Xtest,   H = 35, W = 55, ver_off = 245, hor_off = 180)
+    Xts_C_B2    = prp.crop(Xts,     H = 35, W = 55, ver_off = 245, hor_off = 180)
     
     # %% Grayscale images...
     """
@@ -682,15 +778,14 @@ if __name__ == '__main__':
     # Grayscale face images for task B1 as shape classification is colour 
     # independent
     Xtrain_gry_B1 = prp.reduceRGB(Xtrain_C_B1)
-    Xval_gry_B1 = prp.reduceRGB(Xval_C_B1)
-    Xtest_gry_B1 = prp.reduceRGB(Xtest_C_B1)
+    Xtest_gry_B1  = prp.reduceRGB(Xtest_C_B1)
+    Xts_gry_B1    = prp.reduceRGB(Xts_C_B1)
   
     # Grayscale face images for task B2, for further processing to detect
     # shaded eyeglasses
     Xtrain_gry_B2 = prp.reduceRGB(Xtrain_C_B2)
-    Xval_gry_B2 = prp.reduceRGB(Xval_C_B2)
-    Xtest_gry_B2 = prp.reduceRGB(Xtest_C_B2)
-    
+    Xtest_gry_B2  = prp.reduceRGB(Xtest_C_B2)
+    Xts_gry_B2      = prp.reduceRGB(Xts_C_B2)
         
     # %% Prepare label data...
     """
@@ -700,15 +795,15 @@ if __name__ == '__main__':
     # Transform the 'gender' column of the ytrain-, validation and test
     # labels to one hot vector
     ytrain_B1 =  pd.Series.to_numpy(ytrain.loc[:,'face_shape'].copy())
-    yval_B1   =  pd.Series.to_numpy(yval.loc[:,'face_shape'].copy())
     ytest_B1  =  pd.Series.to_numpy(ytest.loc[:,'face_shape'].copy())
+    yts_B1    =  pd.Series.to_numpy(yts.loc[:,'face_shape'].copy())
     
     # Transform the 'smiling' column of the ytrain-, validation and test
     # labels to one hot vector
     ytrain_B2 =  pd.Series.to_numpy(ytrain.loc[:,'eye_color'].copy())
-    yval_B2   =  pd.Series.to_numpy(yval.loc[:,'eye_color'].copy())
     ytest_B2  =  pd.Series.to_numpy(ytest.loc[:,'eye_color'].copy())
-    
+    yts_B2    =  pd.Series.to_numpy(yts.loc[:,'eye_color'].copy())
+        
     # %%
     
     """
@@ -716,58 +811,68 @@ if __name__ == '__main__':
     """
     
     # %% Flatten data for task B1...
-    
-    # Flattens a library of grayscale images to N-samples of 1 dimension
-    def flatten(img_arr):
         
-        dim = img_arr.ndim - 1 # 1st dimension is N-number of samples 
-        flat = 1 # Initalise the final dimension to be folded to
-        
-        # Flatten all but the 1st dimension
-        for i in range(dim):
-            flat *= img_arr.shape[i+1]
-        
-        # Reshape image array from N,h,w,channels, to N,(h * w)
-        flat_arr = np.reshape(img_arr,(img_arr.shape[0],flat))
-        
-        # Return the library of flattened objects
-        return flat_arr
-    
     # Flatten the training, validation and test data to N-samples X 1D vector
-    Xtrain_B1 = flatten(Xtrain_gry_B1)
-    Xval_B1 = flatten(Xval_gry_B1)
-    Xtest_B1 = flatten(Xtest_gry_B1)
+    Xtrain_B1 = prp.flatten(Xtrain_gry_B1)
+    Xtest_B1  = prp.flatten(Xtest_gry_B1)
+    Xts_B1    = prp.flatten(Xts_gry_B1)
+    
+    print("Scaling data to the interval € [0,1]")
+    
+    # Scale data to 0...1 range
+    scaler = MinMaxScaler()
+    scaler.fit(Xtrain_B1)
+    
+    Xtrain_B1 = scaler.transform(Xtrain_B1)
+    Xtest_B1  = scaler.transform(Xtest_B1)
+    Xts_B1    = scaler.transform(Xts_B1)
     
     # %% Task B1 with Logistic Regression
     """
-    T A S K   B 1 :   F A C E   S H A P E   W/   L O G I S T I C   R E G R E S S I O N
-    """
-    from sklearn.linear_model import LogisticRegression
+    T A S K   B 1 :   F A C E   S H A P E   W/   S O F T M A X   R E G R E S S I O N
+    """    
+
+    # Build Logistic Regression Model
+    logreg = LogisticRegression(solver='lbfgs',# <--- SAGA solver is compatible with all penalty types: l1, l2 and elastinet, we use lbfgs
+                                C=5,           # <--- Higher C translates to lower regularisation strength
+                                penalty='l2',  # <--- Uses Ridge Regression as cost-function, if using LASSO (l1) we're promoting sparsity
+                                multi_class='multinomial', # <--- Softmax (multinomial logistic regression) not OvR 
+                                max_iter = 100) 
+        
+    # Train the model using the training sets
+    logreg.fit(Xtrain_B1, ytrain_B1)
+                
+    # Predict on the training and unseen data
+    yp_tr_B1 = logreg.predict(Xtrain_B1)
+    yp_te_B1 = logreg.predict(Xtest_B1)
+    yp_ts_B1 = logreg.predict(Xts_B1)
     
-    # sklearn functions implementation
-    def logRegrPredict(Xtrain,ytrain,Xtest, solver='lbfgs'):
-        # Build Logistic Regression Model
-        logreg = LogisticRegression(solver=solver,
-                                    C=5.0,
-                                    penalty='l2', # <--- Uses Ridge Regression as cost-function
-                                    multi_class='multinomial',
-                                    max_iter = 100) 
-        
-        # Train the model using the training sets
-        logreg.fit(Xtrain, ytrain)
-        
-        ypred= logreg.predict(Xtest)
-        
-        return ypred
-
-    ypred_B1 = logRegrPredict(Xtrain_B1, ytrain_B1, Xtest_B1)
-    print(accuracy_score(ytest_B1,ypred_B1)) 
-
+    # Store accuracy scores
+    acc_B1_train =  accuracy_score(y_true = ytrain_B1, y_pred = yp_tr_B1)
+    acc_B1_test  =  accuracy_score(y_true = ytest_B1 , y_pred = yp_te_B1)
+    acc_B1_ts    =  accuracy_score(y_true = yts_B1   , y_pred = yp_ts_B1)
+    
+    # Print results:
+    print("Task B1:\n"+"-"*12+"\nTrain: {:.1f}% \nTest:  {:.1f}%\nUnseen:  {:.1f}%".format(acc_B1_train*100,acc_B1_test*100, acc_B1_ts*100))
+  
+    if ui.yes_no_menu("Show confusion matrix? [y]/[n]"):
+        disp = plot_confusion_matrix(logreg,Xtest_B1,ytest_B1,normalize='true',cmap='Blues')
+        disp.figure_.set_dpi(400.0)
+        disp.ax_.set_title("Task B1\nLogistic Regression, $C={}$, penalty={}\nConfusion matrix".format(logreg.C, logreg.penalty))
+        plt.show()   
+    
     # %%
     
     """
     T A S K   B 2 :   E Y E   C O L O R   C L A S S I F I C A T I O N
     """
+    
+    message = 'Please select an option for processing task B2: '
+    options = {'1': 'Remove dark-shaded glasses wearing subjects from data',
+               '2': 'Keep dark-shaded glasses wearing subjects'}
+    
+    selection = ui.selection_menu(message, options)
+    
 
     # %% Detect dark eyeglasses...
     
@@ -775,177 +880,92 @@ if __name__ == '__main__':
     P R E - P R O C E S S :   D E T E C T   D A R K   E Y E G L A S S E S
     """
     
-    # Import the Canny Edge Filter from the scikit-image library
-    from skimage.feature import canny
+    if selection == 1:
     
-    # Define a function for dark glasses detection using Canny filter on grayscale
-    # eye-region imagery
-    def detect_dark_glasses(img_arr, surpress=False):
+        print("Removing dark-shaded glasses wearing subjects from data...")
+        
+        # Retrieve eye region imagery and feature values
+        Xtrain_CE_img , Xtrain_CE_val = prp.detect_dark_glasses(Xtrain_gry_B2, surpress = False)
+        Xtest_CE_img  , Xtest_CE_val  = prp.detect_dark_glasses(Xtest_gry_B2 , surpress = True)
+        Xts_CE_img    , Xts_CE_val    = prp.detect_dark_glasses(Xts_gry_B2   , surpress = True)
         
         """
-        A function that applies a Canny filter to a grayscale eye region image.
-        Edges are stored as binary values in a 35 x 55 (H x W in px) array
-        By summing the values of the array, a feature descriptor is realised.
-        A low scoring descriptor denotes a feature poor eye region which 
-        indicates the eye features are hidden.
-        
-        The Canny filter, tuned with a low sigma parameter, performs well even with 
-        semi-shaded glasses, as the half-transparent alpha channel gets interpreted 
-        as noise. This noise is translated to more edges in the feature descriptor 
-        and hence still provides an excellent classifier for the discrimination 
-        of dark shades.
+        I N D E X   D A R K   G L A S S E S
         """
+        Xtrain_glasses    = np.where(Xtrain_CE_val <  187)[0]
+        Xtrain_no_glasses = np.where(Xtrain_CE_val >= 187)[0]
         
-        # Initialise a container for the Canny edge images
-        canny_img = np.empty(img_arr.shape)
+        Xtest_glasses     = np.where(Xtest_CE_val <  187)[0]
+        Xtest_no_glasses  = np.where(Xtest_CE_val >= 187)[0]
+    
+        Xts_glasses       = np.where(Xts_CE_val  <   187)[0]
+        Xts_no_glasses    = np.where(Xts_CE_val  >=  187)[0] 
         
-        # Initialise a container for the feature description values
-        canny_values = np.empty(len(img_arr))
+        """
+        P R E P A R E   I M A G E S   E X C L U D I N G   D A R K   G L A S S E S 
+        """    
         
-        # For each of the supplied images
-        for i,img in enumerate(img_arr):
-            
-            # Apply a Canny filter
-            edges = canny(img)
-            
-            # Calculate a feature description value:
-            value = edges.astype(int).sum()
-            
-            # Store the Canny image
-            canny_img[i] = edges
-            
-            # Store the feature description value: 
-            canny_values[i] = value
+        Xtrain_B2, ytrain_B2 = prp.only_keep(Xtrain_no_glasses, Xtrain_C_B2, ytrain_B2)
+        Xtest_B2 , ytest_B2  = prp.only_keep(Xtest_no_glasses , Xtest_C_B2 , ytest_B2 )
+        Xts_B2   , yts_B2    = prp.only_keep(Xts_no_glasses   , Xts_C_B2   , yts_B2   ) 
         
-        # We may choose to turn of plotting
-        if not surpress: 
-            
-            # Find a random amount of images
-            rand_img = np.random.randint(0,len(img_arr),size=(3,4))
-            row, col = rand_img.shape
-            
-            fig,ax = plt.subplots(nrows=row,ncols=col)
-            for i in range(row):
-                for j in range(col):
-                    ax[i][j].imshow(canny_img[rand_img[i][j]],cmap=plt.get_cmap("gray"))
-                    ax[i][j].axis("off")
-                    ax[i][j].set_title("{}".format(canny_values[rand_img[i][j]]))
-            
-            plt.suptitle("Eye region edges with pixelwise values")
-            plt.tight_layout()
-            plt.show()
-            
-        return canny_img, canny_values
-    
-    # Retrieve eye region imagery and feature values
-    Xtrain_CE_img , Xtrain_CE_val = detect_dark_glasses(Xtrain_gry_B2)
-    Xval_CE_img , Xval_CE_val = detect_dark_glasses(Xval_gry_B2, surpress = True)
-    Xtest_CE_img , Xtest_CE_val = detect_dark_glasses(Xtest_gry_B2, surpress = True)
-    
-    # %%
-    
-    """
-    V I S U A L I S E   T H E   B O U N D A R Y
-    """
-    
-    # To get a better view of the apparent split in the data, we can
-    # plot the Canny feature descriptor values. The boundary is placed
-    # between the lowest scoring eye (198) and highest ranking glasses (175)
-    
-    plt.figure(figsize=(6,2),dpi=400)
-    
-    shades = Xtrain_CE_val[Xtrain_CE_val < 185]
-    no_shades = Xtrain_CE_val[Xtrain_CE_val > 185]
-    
-    plt.scatter(no_shades , np.zeros_like(no_shades),color="green")
-    plt.scatter(shades , np.zeros_like(shades))
-    plt.axvline(187,color='orange',linestyle = '--')
-    plt.scatter(187,0,marker='x',color='red', label = "Sunglasses boundary")
-    
-    plt.suptitle("Canny eye feature values")
-    plt.yticks([])
-    plt.tight_layout()
-    plt.show()
-    
-    # %% Grabbing the indices where glasses were detected in dataset...
-    """
-    I N D E X   D A R K   G L A S S E S
-    """
-    Xtrain_glasses = np.where(Xtrain_CE_val < 187)[0]
-    Xtrain_no_glasses = np.where(Xtrain_CE_val >= 187)[0]
-    
-    Xval_glasses = np.where(Xval_CE_val < 187)[0]
-    Xval_no_glasses = np.where(Xval_CE_val >= 187)[0]
-    
-    Xtest_glasses = np.where(Xtest_CE_val < 187)[0]
-    Xtest_no_glasses = np.where(Xtest_CE_val >= 187)[0]
-
-    # %% Image prep method 1...
-    
-    # Only flatten the training, validation and test data to N-samples X 1D vector
-    Xtrain_B2 = flatten(Xtrain_C_B2)
-    Xval_B2 = flatten(Xval_C_B2)
-    Xtest_B2 = flatten(Xtest_C_B2)
-
+        # Flatten the training, validation and test data to N-samples X 1D vector
+        Xtrain_B2 = prp.flatten(Xtrain_B2)
+        Xtest_B2  = prp.flatten(Xtest_B2)
+        Xts_B2    = prp.flatten(Xts_B2)
+        
     # %% Image prep method 2...
     """
-    P R E P A R E   I M A G E S   E X C L U D I N G   D A R K   G L A S S E S 
+    P R E - P R O C E S S :   S K I P   D A R K   G L A S S E S   D E T E C T I O N 
     """
-   
-    # Define a function capable of filtering out label and image data given 
-    # a set of indices
-    def only_keep(where_no_glasses, img_arr_to_filter, label_arr_to_filter):
-        
-        # Create container for image data to keep, will be an array of 
-        # N samples, where N = number of indices where no glasses were detected
-        filtered_img_arr = np.empty((where_no_glasses.shape[0],
-                                     img_arr_to_filter.shape[1],
-                                     img_arr_to_filter.shape[2],
-                                     img_arr_to_filter.shape[3]))
-        # We must remove the corresponding label data as well, create container
-        filtered_label_arr = np.empty(where_no_glasses.shape[0])
-        
-        # For each of the image indices passed to us
-        for i,index in enumerate(where_no_glasses):
-            filtered_img_arr[i] = img_arr_to_filter[index]
-            filtered_label_arr[i] = label_arr_to_filter[index]
-            
-        return filtered_img_arr, filtered_label_arr
-    
-    
-    Xtrain_B2,ytrain_B2 = only_keep(Xtrain_no_glasses, Xtrain_C_B2, ytrain_B2)
-    Xval_B2,yval_B2 = only_keep(Xval_no_glasses, Xval_C_B2, yval_B2)
-    Xtest_B2,ytest_B2 = only_keep(Xtest_no_glasses, Xtest_C_B2, ytest_B2)
-    
+    if selection == 2:
+        # Only flatten the training, validation and test data to N-samples X 1D vector
+        Xtrain_B2 = prp.flatten(Xtrain_C_B2)
+        Xtest_B2  = prp.flatten(Xtest_C_B2)
+        Xts_B2    = prp.flatten(Xts_C_B2)
 
+    # %% Scale
     
-    # %% Flatten data for task B2...
-        
-    # Flatten the training, validation and test data to N-samples X 1D vector
-    Xtrain_B2 = flatten(Xtrain_B2)
-    Xval_B2 = flatten(Xval_B2)
-    Xtest_B2 = flatten(Xtest_B2)
-   
+    print("Scaling data to the interval € [0,1]...")
+    
+    # Scale data to 0...1 range
+    scaler = MinMaxScaler()
+    scaler.fit(Xtrain_B2)
+    
+    Xtrain_B2 = scaler.transform(Xtrain_B2)
+    Xtest_B2  = scaler.transform(Xtest_B2)
+    Xts_B2    = scaler.transform(Xts_B2)
+
     # %% Task B2 with Logistic Regression
     """
-    T A S K   B 2 :   E Y E   C O L O R   W/   L O G I S T I C   R E G R E S S I O N
-    """
-    
-    # sklearn functions implementation
-    def logRegrPredict(Xtrain,ytrain,Xtest, solver='lbfgs'):
-        # Build Logistic Regression Model
-        logreg = LogisticRegression(solver=solver,
-                                    C=5.0,
-                                    penalty='l2',
-                                    multi_class='multinomial',
-                                    max_iter = 100) 
-        
-        # Train the model using the training sets
-        logreg.fit(Xtrain, ytrain)
-        
-        ypred= logreg.predict(Xtest)
-        
-        return ypred
+    T A S K   B 2 :   E Y E   C O L O R   W/   S O F T M A X   R E G R E S S I O N
+    """    
 
-    ypred_B2 = logRegrPredict(Xtrain_B2, ytrain_B2, Xtest_B2)
-    print(accuracy_score(ytest_B2,ypred_B2))
+    # Build Logistic Regression Model
+    logreg = LogisticRegression(solver='lbfgs', # <--- SAGA solver is compatible with all penalty types: l1, l2 and elastinet, we use lbfgs
+                                C=5,            # <--- Higher C translates to lower regularisation strength
+                                penalty='l2',   # <--- Uses Ridge Regression as cost-function, if using LASSO (l1) we're promoting sparsity
+                                multi_class='multinomial', # <--- Softmax (multinomial logistic regression) not OvR 
+                                max_iter = 100) 
+        
+    # Train the model using the training sets
+    logreg.fit(Xtrain_B2, ytrain_B2)
+                
+    # Predict on the training and unseen data
+    yp_tr_B2 = logreg.predict(Xtrain_B2)
+    yp_te_B2 = logreg.predict(Xtest_B2)
+    yp_ts_B2 = logreg.predict(Xts_B2)
+    
+    # Store accuracy scores
+    acc_B2_train =  accuracy_score(y_true = ytrain_B2, y_pred = yp_tr_B2)
+    acc_B2_test  =  accuracy_score(y_true = ytest_B2 , y_pred = yp_te_B2)
+    acc_B2_ts    =  accuracy_score(y_true = yts_B2   , y_pred = yp_ts_B2)
+    
+    # Print results:
+    print("Task B2:\n"+"-"*12+"\nTrain: {:.1f}% \nTest:  {:.1f}%\nUnseen: {:.1f}".format(acc_B2_train*100,acc_B2_test*100,acc_B2_ts*100))
+    
+    if ui.yes_no_menu("Show confusion matrix? [y]/[n]"):
+        disp = plot_confusion_matrix(logreg,Xtest_B2,ytest_B2,normalize='true',cmap='Blues')
+        disp.figure_.set_dpi(400.0)
+        disp.ax_.set_title("Task B2\nLogistic Regression, $C={}$, penalty={}\nConfusion matrix".format(logreg.C, logreg.penalty))
+        plt.show()  
