@@ -1,5 +1,32 @@
 # README
 
+Remark: The Anaconda environment needed to run the python program is in the /Conda_Environment directory. Please install it using:
+
+		conda env create -f env_sn20167036.yml
+		
+	This includes all the conda- and pip-installed packages.
+	Once setup is complete you can do: 
+	
+		conda env list
+	
+	or alternatively:
+	
+		conda info --envs
+		
+	and you should see the environment "env_sn20167036" there.
+	Don't forget to activate the environment using:
+		
+		conda activate env_sn20167036
+		
+	before executing the script.
+	The .yml can also be opened in a text editor to see the packages used (if a similar env. happens to exists on your client) but correct execution is understandably not guaranteed.
+	
+	More info on managing conda environments here:
+	
+		--- M A N A G I N G   C O N D A   E N V I R O N M E N T S ---
+	
+		https://docs.conda.io/projects/conda/en/latest/user-guide/tasks/manage-environments.html#creating-an-environment-from-an-environment-yml-file
+
 Remark: All the code was initially developed in the main.py file. This is the bread and butter of this project. The code was then broken down into each of the tasks and stored in the A1...B2 folders.
 	I will only describe the code briefly here.
 
@@ -63,23 +90,32 @@ Description:
 	- CV_Sobel_A1.pkl 272 MB (CV records for the Sobel-Feldman edge detector for A1)
 	- CV_Sobel_A2.pkl 272 MB (CV records for the Sobel-Feldman edge detector for A2)
 
-+++++++++++++++++++
-Directory: Datasets
-+++++++++++++++++++
++++++++++++++++++++++
+Directory: CV_Records
++++++++++++++++++++++
 
 Contents:
-	- cartoon_set
-		(empty dir)
-	- cartoon_set_test
-		(empty dir)	
-	- celeba
-		(empty dir)
-	- celeba_test
-		(empty dir)
-	- Remark.md
+	- CV_HOG_A1.pkl
+	- CV_HOG_A2.pkl
+	- CV_SURF_A2.pkl
+	- CV_SURF_A2.pkl
 	
 Description:
-	- Hosts the image data, which is not uploaded to this Github repo.
+	- Contains pickled cross-validation results that was performed on UCL's GPU servers.
+	- Each pre-processing method has it's own cross-validation record.
+	- Histogram of Oriented Gradients (HOG) is the best performing feature descriptor.
+	- Only HOG and SURF was delivered in Github repo.
+	- The others can be obtained from h
+
+++++++++++++++++++++++++++++
+Directory: Conda_Environment
+++++++++++++++++++++++++++++
+
+Contents:
+	- env_sn20167036.yml
+	
+Description:
+	- The Anaconda environment needed to execute the program, see the topmost "Remark" of this README for further guidance.
 
 +++++++++++++
 File: main.py
