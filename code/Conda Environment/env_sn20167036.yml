@@ -42,7 +42,6 @@ dependencies:
     - imageio==2.9.*
     - keyboard==0.13.*
     - opencv-contrib-python==3.4.*
-    - pyshearlab==0.0.*
     - pywavelets==1.1.*
     - scikit-image==0.17.*
     - seaborn==0.11.*
